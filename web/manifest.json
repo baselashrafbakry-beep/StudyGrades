@@ -1,0 +1,57 @@
+{
+    "name": "StudyGrades 2026 - رصد الدرجات الصوتي",
+    "short_name": "StudyGrades",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0D47A1",
+    "theme_color": "#1976D2",
+    "description": "تطبيق رصد الدرجات الصوتي - StudyGrades 2026 - نظام احترافي لإدخال درجات الطلاب صوتياً باللهجة المصرية مع دعم العمل بدون إنترنت",
+    "orientation": "portrait",
+    "prefer_related_applications": false,
+    "lang": "ar-EG",
+    "dir": "rtl",
+    "scope": "./",
+    "categories": ["education", "productivity", "utilities"],
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "تسجيل درجات جديدة",
+            "short_name": "درجات",
+            "description": "ابدأ رصد الدرجات صوتياً",
+            "url": "./?action=grade",
+            "icons": [{ "src": "icons/Icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "لوحة التحكم",
+            "short_name": "إحصاءات",
+            "description": "عرض الإحصاءات والتقارير",
+            "url": "./?action=dashboard",
+            "icons": [{ "src": "icons/Icon-192.png", "sizes": "192x192" }]
+        }
+    ]
+}
