@@ -60,14 +60,58 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _bootstrap() async {
+    // HARD safety timer: navigate to LoginScreen no matter what after 4s.
+    // Prevents the splash from ever getting stuck on any device.
+    bool navigated = false;
+    void navigateTo(Widget screen) {
+      if (navigated || !mounted) return;
+      navigated = true;
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, animation, __) => FadeTransition(
+            opacity: animation,
+            child: screen,
+          ),
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+      );
+    }
+
+    // Fallback timer — guarantees the user never sees a frozen splash.
+    Future.delayed(const Duration(milliseconds: 4000), () {
+      if (!navigated && mounted) {
+        navigateTo(const LoginScreen());
+      }
+    });
+
     final auth = context.read<AuthProvider>();
-    await auth.restoreSession();
-    final seenIntro = await StorageService.hasSeenIntro();
-    await Future.delayed(const Duration(milliseconds: 2000));
-    if (!mounted) return;
+
+    // Each step gets its own timeout so a single hang can never block boot.
+    bool isAuth = false;
+    try {
+      await auth
+          .restoreSession()
+          .timeout(const Duration(milliseconds: 2500));
+      isAuth = auth.isAuthenticated;
+    } catch (_) {
+      // restoreSession timed out or failed — treat as unauthenticated.
+      isAuth = false;
+    }
+
+    bool seenIntro = true; // default to skipping onboarding on failure
+    try {
+      seenIntro = await StorageService.hasSeenIntro()
+          .timeout(const Duration(milliseconds: 800));
+    } catch (_) {
+      seenIntro = true;
+    }
+
+    // Minimum splash visibility for branding (only if we still have time).
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted || navigated) return;
 
     Widget nextScreen;
-    if (auth.isAuthenticated) {
+    if (isAuth) {
       nextScreen = const HomeScreen();
     } else if (!seenIntro) {
       nextScreen = const OnboardingScreen();
@@ -75,15 +119,7 @@ class _SplashScreenState extends State<SplashScreen>
       nextScreen = const LoginScreen();
     }
 
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder(
-        pageBuilder: (_, animation, __) => FadeTransition(
-          opacity: animation,
-          child: nextScreen,
-        ),
-        transitionDuration: const Duration(milliseconds: 600),
-      ),
-    );
+    navigateTo(nextScreen);
   }
 
   @override

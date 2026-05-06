@@ -24,20 +24,23 @@ Future<void> main() async {
   ErrorHandler.runGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    // Critical initializations — wrapped so a single failure does not
-    // prevent the rest of the app from booting.
+    // Critical initializations — wrapped with timeouts so a single
+    // hang can never prevent the app from booting on real devices.
     try {
-      await StorageService.init();
+      await StorageService.init()
+          .timeout(const Duration(seconds: 4));
     } catch (e, s) {
       ErrorHandler.logError(e, s, 'StorageService.init');
     }
     try {
-      await connectivityService.init();
+      await connectivityService.init()
+          .timeout(const Duration(seconds: 3));
     } catch (e, s) {
       ErrorHandler.logError(e, s, 'ConnectivityService.init');
     }
     try {
-      await AdminService.initDefaultDeveloper();
+      await AdminService.initDefaultDeveloper()
+          .timeout(const Duration(seconds: 3));
     } catch (e, s) {
       ErrorHandler.logError(e, s, 'AdminService.initDefaultDeveloper');
     }
