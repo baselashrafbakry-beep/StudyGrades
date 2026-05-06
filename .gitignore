@@ -37,6 +37,9 @@ ios/Flutter/flutter_export_environment.sh
 .DS_Store
 Thumbs.db
 
+# Coverage
+coverage/
+
 # Secrets
 *.env
 secrets/
