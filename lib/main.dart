@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/grading_provider.dart';
@@ -23,6 +24,13 @@ Future<void> main() async {
 
   ErrorHandler.runGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // CRITICAL: Disable runtime HTTP fetching of Google Fonts.
+    // The app bundles Cairo locally (assets/fonts/Cairo-Regular.ttf),
+    // so any GoogleFonts.cairo(...) call falls back to the bundled
+    // font instead of trying to hit fonts.google.com — which was the
+    // root cause of the splash-screen freeze on first launch.
+    GoogleFonts.config.allowRuntimeFetching = false;
 
     // Critical initializations — wrapped with timeouts so a single
     // hang can never prevent the app from booting on real devices.

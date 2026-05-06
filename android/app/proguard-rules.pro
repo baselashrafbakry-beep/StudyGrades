@@ -73,3 +73,55 @@
 
 # Keep model classes (data classes)
 -keep class com.voicegrader.grader.models.** { *; }
+
+# ────────── COMPREHENSIVE PROGUARD RULES (FINAL) ──────────
+
+# google_fonts (reflection-heavy)
+-keep class com.google.fonts.** { *; }
+-dontwarn com.google.fonts.**
+
+# fl_chart
+-keep class fl_chart.** { *; }
+
+# Hive type adapters
+-keep class **$HiveFieldAdapter { *; }
+-keep class **$HiveTypeAdapter { *; }
+-keepclassmembers class * {
+    @hive.HiveField *;
+    @hive.HiveType *;
+}
+
+# excel package
+-keep class com.example.excel.** { *; }
+-keep class * implements java.io.Serializable { *; }
+
+# Dio retrofit/interceptors safety
+-keep class dio.** { *; }
+-dontwarn dio.**
+
+# Audio: audioplayers + record
+-keep class xyz.luan.audioplayers.** { *; }
+-keep class com.llfbandit.record.** { *; }
+
+# Lottie
+-keep class com.airbnb.lottie.** { *; }
+-dontwarn com.airbnb.lottie.**
+
+# Reflection - keep all annotation processors
+-keepattributes RuntimeVisibleAnnotations
+-keepattributes RuntimeInvisibleAnnotations
+-keepattributes RuntimeVisibleParameterAnnotations
+-keepattributes RuntimeInvisibleParameterAnnotations
+
+# Keep all serializable classes
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+# Don't strip Generic Signature (needed for Dio/Hive)
+-keepattributes Signature,Exceptions,*Annotation*,EnclosingMethod,InnerClasses

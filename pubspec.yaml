@@ -76,3 +76,9 @@ flutter:
   assets:
     - assets/icons/
     - assets/images/
+    - assets/fonts/
+
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
