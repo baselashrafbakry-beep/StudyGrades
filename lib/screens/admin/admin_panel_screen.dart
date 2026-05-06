@@ -6,6 +6,7 @@ import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/error_handler.dart';
 import 'users_management_screen.dart';
 import 'system_stats_screen.dart';
 import 'system_settings_screen.dart';
@@ -38,7 +39,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         _stats = stats;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AdminPanel.loadStats');
       if (!mounted) return;
       setState(() => _loading = false);
     }

@@ -4,6 +4,7 @@ import '../models/pending_sync.dart';
 import '../services/api_client.dart';
 import '../services/storage_service.dart';
 import '../services/connectivity_service.dart';
+import '../utils/error_handler.dart';
 
 /// Grading provider - manages classroom data, current student index, grade
 /// updates, and online/offline synchronization. Includes proper error
@@ -201,7 +202,8 @@ class GradingProvider extends ChangeNotifier {
           ],
         );
         return true;
-      } catch (_) {
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'GradingProvider.saveCurrentStudent');
         await StorageService.addPendingSync(payload);
         _pendingCount = StorageService.pendingCount;
         notifyListeners();
@@ -277,7 +279,8 @@ class GradingProvider extends ChangeNotifier {
                   .toList(),
             );
             synced += cEntry.value.length;
-          } catch (_) {
+          } catch (e, st) {
+            ErrorHandler.logError(e, st, 'GradingProvider.syncPending');
             failed.addAll(cEntry.value);
           }
         }

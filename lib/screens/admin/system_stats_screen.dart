@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/user_model.dart';
 import '../../services/admin_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/error_handler.dart';
 
 /// شاشة إحصاءات النظام التفصيلية - للمطور والمدير
 class SystemStatsScreen extends StatefulWidget {
@@ -35,7 +36,8 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
         _users = users;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SystemStats.load');
       if (!mounted) return;
       setState(() => _loading = false);
     }

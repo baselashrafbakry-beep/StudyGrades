@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/admin_service.dart';
 import '../services/api_client.dart';
+import '../utils/error_handler.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -30,7 +31,8 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _status = AuthStatus.unauthenticated;
       }
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AuthProvider.restoreSession');
       _status = AuthStatus.unauthenticated;
     } finally {
       _isLoading = false;
@@ -91,7 +93,9 @@ class AuthProvider extends ChangeNotifier {
       if (!_isLocalAuth) {
         await apiClient.logout();
       }
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AuthProvider.logout');
+    }
     if (_user != null) {
       await AdminService.logActivity(
         'تسجيل خروج',

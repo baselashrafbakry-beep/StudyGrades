@@ -54,18 +54,36 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
   }
 
   Future<void> _clearAll() async {
+    if (_pending.isEmpty) {
+      Fluttertoast.showToast(
+        msg: 'لا توجد معلقات لحذفها',
+        backgroundColor: AppColors.warning,
+        textColor: Colors.white,
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        title: Text(
-          'حذف جميع المعلقات',
-          style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: AppColors.error, size: 26),
+            const SizedBox(width: 8),
+            Text(
+              'حذف جميع المعلقات',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
         content: Text(
-          'سيتم حذف جميع المزامنات المعلقة. هذا الإجراء لا يمكن التراجع عنه.',
+          'سيتم حذف ${_pending.length} عملية مزامنة معلقة بشكل نهائي.\n'
+          'البيانات غير المرسلة ستُفقد ولا يمكن استرجاعها.',
           style: GoogleFonts.cairo(),
         ),
         actions: [
@@ -76,20 +94,30 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('حذف الكل', style: GoogleFonts.cairo()),
+            child: Text('حذف الكل',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
     if (confirm != true) return;
-    await StorageService.clearPendingSyncs();
-    if (!mounted) return;
-    _refresh();
-    Fluttertoast.showToast(
-      msg: 'تم حذف جميع المعلقات',
-      backgroundColor: AppColors.success,
-      textColor: Colors.white,
-    );
+    try {
+      await StorageService.clearPendingSyncs();
+      if (!mounted) return;
+      _refresh();
+      Fluttertoast.showToast(
+        msg: 'تم حذف جميع المعلقات',
+        backgroundColor: AppColors.success,
+        textColor: Colors.white,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Fluttertoast.showToast(
+        msg: 'تعذر حذف المعلقات',
+        backgroundColor: AppColors.error,
+        textColor: Colors.white,
+      );
+    }
   }
 
   @override
@@ -264,7 +292,9 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     DateTime? time;
     try {
       time = DateTime.parse(item.timestamp);
-    } catch (_) {}
+    } catch (_) {
+      // Invalid timestamp - fall back to raw string
+    }
     final dateStr = time != null
         ? DateFormat('dd/MM/yyyy - hh:mm a', 'ar').format(time)
         : item.timestamp;

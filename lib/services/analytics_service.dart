@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/student_model.dart';
+import '../utils/error_handler.dart';
 
 class ClassStats {
   final int totalStudents;
@@ -766,7 +767,8 @@ class AnalyticsService {
         text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
       );
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AnalyticsService.exportToExcel');
       return false;
     }
   }
@@ -836,7 +838,8 @@ class AnalyticsService {
         text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
       );
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AnalyticsService.exportToCSV');
       return false;
     }
   }

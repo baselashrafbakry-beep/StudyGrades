@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user_model.dart';
 import '../models/hierarchy_model.dart';
 import '../models/student_model.dart';
+import '../utils/error_handler.dart';
 
 /// API Client for StudyGrades 2026 backend (deployed on Netlify Functions).
 /// Handles JWT auth, automatic token refresh on 401, idempotent retry on
@@ -60,7 +61,8 @@ class ApiClient {
                 final cloneResp = await _dio.fetch(opts);
                 return handler.resolve(cloneResp);
               }
-            } catch (_) {
+            } catch (e, st) {
+              ErrorHandler.logError(e, st, 'ApiClient.refreshRetry');
               await clearTokens();
             }
           }
@@ -86,7 +88,8 @@ class ApiClient {
           await _storage.write(key: _accessKey, value: newAccess);
           return newAccess;
         }
-      } catch (_) {
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'ApiClient.refreshAccessToken');
         return null;
       } finally {
         _refreshFuture = null;
@@ -169,7 +172,9 @@ class ApiClient {
   Future<void> logout() async {
     try {
       await _dio.post('/logout/');
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ApiClient.logout');
+    }
     await clearTokens();
   }
 
@@ -189,7 +194,8 @@ class ApiClient {
     if (raw == null) return null;
     try {
       return User.fromJson(Map<String, dynamic>.from(jsonDecode(raw)));
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ApiClient.getCachedUser');
       return null;
     }
   }

@@ -111,7 +111,9 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                               DateTime? ts;
                               try {
                                 ts = DateTime.parse(a['timestamp'] ?? '');
-                              } catch (_) {}
+                              } catch (_) {
+                                // Invalid timestamp - leave ts null
+                              }
                               final color = _typeColor(type);
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),

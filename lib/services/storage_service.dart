@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pending_sync.dart';
+import '../utils/error_handler.dart';
 
 /// Local storage service using Hive (document) + SharedPreferences (key-value)
 class StorageService {
@@ -42,7 +43,8 @@ class StorageService {
       return decoded
           .map((e) => PendingSync.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'StorageService.getPendingSyncs');
       return [];
     }
   }
@@ -87,7 +89,8 @@ class StorageService {
     if (raw == null) return null;
     try {
       return Map<String, dynamic>.from(jsonDecode(raw));
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'StorageService.getCachedClassroom');
       return null;
     }
   }

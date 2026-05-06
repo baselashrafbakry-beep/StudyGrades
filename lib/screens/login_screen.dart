@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../utils/error_handler.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -59,7 +60,9 @@ class _LoginScreenState extends State<LoginScreen>
           _rememberMe = true;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'LoginScreen.loadRemembered');
+    }
   }
 
   Future<void> _saveRememberedUser() async {
@@ -70,7 +73,9 @@ class _LoginScreenState extends State<LoginScreen>
       } else {
         await prefs.remove(_rememberKey);
       }
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'LoginScreen.saveRemembered');
+    }
   }
 
   @override

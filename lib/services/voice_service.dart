@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import '../utils/error_handler.dart';
 
 /// Voice recording + on-device speech-to-text service.
 /// Strategy:
@@ -54,7 +55,8 @@ class VoiceService {
         debugLogging: false,
       );
       _initialized = true;
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'VoiceService.initSpeech');
       _speechAvailable = false;
       _initialized = true;
     }
@@ -78,7 +80,9 @@ class VoiceService {
     if (_isListening) {
       try {
         await _speech.stop();
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'VoiceService.stopBefore');
+      }
       _isListening = false;
       // tiny delay so platform releases mic
       await Future.delayed(const Duration(milliseconds: 120));
@@ -124,7 +128,9 @@ class VoiceService {
       if (!completer.isCompleted) {
         try {
           await _speech.stop();
-        } catch (_) {}
+        } catch (e, st) {
+          ErrorHandler.logError(e, st, 'VoiceService.timeoutStop');
+        }
         completeOnce(finalText);
       }
     });
@@ -136,7 +142,9 @@ class VoiceService {
     if (_isListening) {
       try {
         await _speech.stop();
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'VoiceService.stopListening');
+      }
       _isListening = false;
     }
   }
@@ -145,7 +153,9 @@ class VoiceService {
     if (_isListening) {
       try {
         await _speech.cancel();
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'VoiceService.cancelListening');
+      }
       _isListening = false;
     }
     // also clean up any continuous streams
@@ -196,7 +206,9 @@ class VoiceService {
     String? path;
     try {
       path = await _recorder.stop();
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'VoiceService.stopRecording');
+    }
     _isRecording = false;
     _isPaused = false;
     final result = path ?? _currentRecordingPath;
@@ -207,10 +219,14 @@ class VoiceService {
   Future<void> dispose() async {
     try {
       await cancelListening();
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'VoiceService.disposeCancel');
+    }
     try {
       await _recorder.dispose();
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'VoiceService.disposeRecorder');
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/error_handler.dart';
 
 /// مزود السمات - يدير الوضع الفاتح والداكن
 class ThemeProvider extends ChangeNotifier {
@@ -26,7 +27,8 @@ class ThemeProvider extends ChangeNotifier {
         _themeMode = ThemeMode.system;
       }
       notifyListeners();
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ThemeProvider.loadTheme');
       _themeMode = ThemeMode.light;
     }
   }
@@ -49,7 +51,9 @@ class ThemeProvider extends ChangeNotifier {
           break;
       }
       await prefs.setString(_themeKey, value);
-    } catch (_) {}
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ThemeProvider.setTheme');
+    }
   }
 
   Future<void> toggleTheme() async {

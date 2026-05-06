@@ -801,41 +801,103 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   }
 
   Future<void> _confirmDelete(User user) async {
+    // ============ Critical-action protection ============
+    // Prevent accidental deletion of protected accounts.
+    if (user.role == 'developer' || user.username == 'developer') {
+      _showError('لا يمكن حذف حساب المطور (محمي)');
+      return;
+    }
+
+    final TextEditingController confirmCtrl = TextEditingController();
+    bool agreed = false;
+
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.warning_rounded, color: AppColors.error),
-            const SizedBox(width: 8),
-            Text('تأكيد الحذف',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: AppColors.error, size: 28),
+              const SizedBox(width: 8),
+              Text('تأكيد الحذف النهائي',
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'سيتم حذف الحساب: ${user.displayName}\n'
+                'هذه عملية نهائية لا يمكن التراجع عنها وقد تؤثر على البيانات والتقارير المرتبطة.',
+                style: GoogleFonts.cairo(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'اكتب كلمة "حذف" للتأكيد:',
+                style: GoogleFonts.cairo(
+                    fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: confirmCtrl,
+                onChanged: (v) => setStateDialog(() {
+                  agreed = v.trim() == 'حذف';
+                }),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'حذف',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                style: GoogleFonts.cairo(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('إلغاء', style: GoogleFonts.cairo()),
+            ),
+            ElevatedButton(
+              onPressed: agreed ? () => Navigator.pop(ctx, true) : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                disabledBackgroundColor: Colors.grey.shade300,
+              ),
+              child: Text('حذف نهائياً',
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
-        content: Text(
-          'هل تريد حذف الحساب: ${user.displayName}؟\nلا يمكن التراجع عن هذه العملية.',
-          style: GoogleFonts.cairo(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('إلغاء', style: GoogleFonts.cairo()),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: Text('حذف',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
-    if (result == true) {
+
+    confirmCtrl.dispose();
+    if (result != true) return;
+    if (!mounted) return;
+
+    // Show progress so user can't double-trigger
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
       await AdminService.deleteUser(user.id);
+      if (!mounted) return;
+      Navigator.pop(context); // close progress
       _showSuccess('تم حذف الحساب');
       _loadUsers();
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // close progress
+      _showError('تعذر حذف الحساب: $e');
     }
   }
 }

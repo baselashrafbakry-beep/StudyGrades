@@ -58,7 +58,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       // PackageInfo may not be available on web, gracefully fallback
       _appVersion = '1.0.0';
-    } catch (_) {}
+    } catch (_) {
+      // Fallback already set above
+    }
   }
 
   Future<void> _setSetting(String key, dynamic value) async {
@@ -827,18 +829,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _confirmClearCache() async {
+    final pendingCount = StorageService.pendingCount;
     final confirm = await showDialog<bool>(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        title: Text(
-          'تأكيد المسح',
-          style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: AppColors.error, size: 26),
+            const SizedBox(width: 8),
+            Text(
+              'تأكيد المسح',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
         content: Text(
-          'سيتم حذف جميع البيانات المؤقتة والإعدادات المحلية. هل أنت متأكد؟',
+          pendingCount > 0
+              ? 'لديك $pendingCount عملية مزامنة معلقة لم تُرسل بعد.\n'
+                  'سيتم حذف جميع البيانات المؤقتة والإعدادات المحلية. هذه العملية لا يمكن التراجع عنها.'
+              : 'سيتم حذف جميع البيانات المؤقتة والإعدادات المحلية. هل أنت متأكد؟',
           style: GoogleFonts.cairo(),
         ),
         actions: [
@@ -849,7 +863,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('حذف', style: GoogleFonts.cairo()),
+            child: Text('حذف نهائياً',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -857,12 +872,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirm != true) return;
     if (!mounted) return;
 
-    await StorageService.clearPendingSyncs();
-    Fluttertoast.showToast(
-      msg: 'تم مسح البيانات المخزنة',
-      backgroundColor: AppColors.success,
-      textColor: Colors.white,
-    );
+    try {
+      await StorageService.clearPendingSyncs();
+      if (!mounted) return;
+      Fluttertoast.showToast(
+        msg: 'تم مسح البيانات المخزنة',
+        backgroundColor: AppColors.success,
+        textColor: Colors.white,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Fluttertoast.showToast(
+        msg: 'تعذر مسح البيانات',
+        backgroundColor: AppColors.error,
+        textColor: Colors.white,
+      );
+    }
   }
 
   void _showHelpDialog() {

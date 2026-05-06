@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:hive/hive.dart';
 import '../models/user_model.dart';
+import '../utils/error_handler.dart';
 
 /// خدمة إدارة المستخدمين والإعدادات الإدارية محلياً
 /// تعمل في وضع Offline بشكل كامل وتُمكّن المطور والمدير من إدارة الحسابات
@@ -73,7 +74,9 @@ class AdminService {
         if (raw == null) continue;
         final data = jsonDecode(raw as String) as Map<String, dynamic>;
         users.add(User.fromJson(data));
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'AdminService.listUsers');
+      }
     }
     users.sort((a, b) => UserRole.level(b.role) - UserRole.level(a.role));
     return users;
@@ -182,7 +185,8 @@ class AdminService {
     try {
       final data = jsonDecode(raw as String) as Map<String, dynamic>;
       return User.fromJson(data);
-    } catch (_) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AdminService.getUserById');
       return null;
     }
   }
@@ -248,7 +252,9 @@ class AdminService {
         final raw = box.get(key);
         if (raw == null) continue;
         entries.add(jsonDecode(raw as String) as Map<String, dynamic>);
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'AdminService.listActivities');
+      }
     }
     entries.sort((a, b) =>
         (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
@@ -302,7 +308,9 @@ class AdminService {
     if (activities.isNotEmpty) {
       try {
         lastActivity = DateTime.parse(activities.first['timestamp']);
-      } catch (_) {}
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'AdminService.parseLastActivity');
+      }
     }
 
     // عدد المسجلين خلال آخر 7 أيام

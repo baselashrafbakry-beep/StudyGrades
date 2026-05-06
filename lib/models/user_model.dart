@@ -179,7 +179,9 @@ class User {
     if (v is String && v.isNotEmpty) {
       try {
         return DateTime.parse(v);
-      } catch (_) {}
+      } catch (_) {
+        // Date parsing failed - return null silently (validation only)
+      }
     }
     return null;
   }

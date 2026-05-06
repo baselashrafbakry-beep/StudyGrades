@@ -129,7 +129,16 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               textAlign: TextAlign.center,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d\.]')),
+                // Allow only digits, single decimal point, no negatives.
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                // Prevent multiple dots and overflow lengths.
+                TextInputFormatter.withFunction((oldVal, newVal) {
+                  final t = newVal.text;
+                  if (t.isEmpty) return newVal;
+                  if ('.'.allMatches(t).length > 1) return oldVal;
+                  if (t.length > 6) return oldVal;
+                  return newVal;
+                }),
               ],
               style: TextStyle(
                 fontSize: 20,
@@ -168,8 +177,18 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 ),
               ),
               onChanged: (v) {
-                final parsed = double.tryParse(v) ?? 0;
-                widget.onChanged(parsed.clamp(0, widget.field.max).toDouble());
+                if (v.isEmpty) {
+                  widget.onChanged(0);
+                  return;
+                }
+                final parsed = double.tryParse(v);
+                if (parsed == null || !parsed.isFinite || parsed < 0) {
+                  // Invalid input — silently keep old value, do not propagate.
+                  return;
+                }
+                widget.onChanged(
+                  parsed.clamp(0, widget.field.max).toDouble(),
+                );
               },
             ),
           ),
