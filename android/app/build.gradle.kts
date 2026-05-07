@@ -52,12 +52,13 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // CRITICAL: Disabled minify/shrink to prevent ProGuard/R8 from
+            // stripping reflection-based classes used by Flutter plugins.
+            // Earlier builds with minify=true caused the app to freeze on
+            // splash because R8 removed flutter_secure_storage / Hive /
+            // speech_to_text classes that are loaded reflectively.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
         debug {
             isMinifyEnabled = false
