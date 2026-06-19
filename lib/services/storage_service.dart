@@ -10,11 +10,19 @@ class StorageService {
   static const String settingsBoxName = 'settings_box';
   static const String classroomCacheBox = 'classroom_cache_box';
 
+  /// حد أقصى للقائمة المعلقة لمنع تراكمها بلا حد (1000 طالب = مؤمَّن)
+  static const int _maxPendingItems = 1000;
+
+  /// Cache لـ pendingCount لتجنب فك ترميز JSON في كل استدعاء (O(1) بدلاً من O(n))
+  static int _cachedPendingCount = -1; // -1 = غير مُحدَّث بعد
+
   static Future<void> init() async {
     await Hive.initFlutter();
     await Hive.openBox(pendingBoxName);
     await Hive.openBox(settingsBoxName);
     await Hive.openBox(classroomCacheBox);
+    // تهيئة الـ cache عند البدء
+    _cachedPendingCount = getPendingSyncs().length;
   }
 
   // ============ Pending Syncs ============
@@ -29,10 +37,17 @@ class StorageService {
       (s) => s.studentId == sync.studentId && s.subject == sync.subject,
     );
     list.add(sync);
+
+    // تطبيق الحد الأقصى لمنع التراكم اللانهائي
+    final trimmed = list.length > _maxPendingItems
+        ? list.sublist(list.length - _maxPendingItems)
+        : list;
+
     await _pendingBox.put(
       'list',
-      jsonEncode(list.map((e) => e.toJson()).toList()),
+      jsonEncode(trimmed.map((e) => e.toJson()).toList()),
     );
+    _cachedPendingCount = trimmed.length; // تحديث الـ cache
   }
 
   static List<PendingSync> getPendingSyncs() {
@@ -51,21 +66,31 @@ class StorageService {
 
   static Future<void> clearPendingSyncs() async {
     await _pendingBox.delete('list');
+    _cachedPendingCount = 0; // تحديث الـ cache
   }
 
   /// Replace the entire pending list (used when partially syncing).
   static Future<void> replacePendingSyncs(List<PendingSync> list) async {
     if (list.isEmpty) {
       await _pendingBox.delete('list');
+      _cachedPendingCount = 0;
       return;
     }
     await _pendingBox.put(
       'list',
       jsonEncode(list.map((e) => e.toJson()).toList()),
     );
+    _cachedPendingCount = list.length; // تحديث الـ cache
   }
 
-  static int get pendingCount => getPendingSyncs().length;
+  /// O(1) — يُرجع من الـ cache مباشرةً دون فك ترميز JSON
+  static int get pendingCount {
+    if (_cachedPendingCount < 0) {
+      // lazy init إذا لم تُستدعَ init() بعد
+      _cachedPendingCount = getPendingSyncs().length;
+    }
+    return _cachedPendingCount;
+  }
 
   // ============ Settings ============
   static Future<void> setSetting(String key, dynamic value) async {

@@ -359,7 +359,7 @@ class NLPParser {
   }
 
   static void _extractArabicNumbers(String normalized, List<double> numbers) {
-    // تجربة العبارات المركبة أولاً (مثل "خمسة وعشرين")
+    // تجربة العبارات المركبة المسجّلة أولاً (مثل "خمسة وعشرين")
     for (final entry in _arabicNumbers.entries) {
       if (!entry.key.contains(' ')) continue; // عبارات متعددة الكلمات فقط
       final nk = _normalize(entry.key);
@@ -374,7 +374,9 @@ class NLPParser {
       }
     }
 
-    // ثم كلمات مفردة مع دعم التركيبات (عدد + عشرات)
+    // ثم كلمات مفردة مع دعم التركيبات بكلا الترتيبين:
+    //   وحدات + عشرات: "خمسة وعشرين" = 25
+    //   عشرات + وحدات: "عشرين وخمسة" = 25
     final words = normalized.split(' ');
     for (var i = 0; i < words.length; i++) {
       final w = words[i];
@@ -390,14 +392,18 @@ class NLPParser {
 
       if (matched != null) {
         final n = _arabicNumbers[matched]!;
-        // الكسور: تُضاف إلى الرقم السابق
-        if ((n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75) &&
-            numbers.isNotEmpty) {
-          numbers[numbers.length - 1] =
-              double.parse((numbers.last + n).toStringAsFixed(3));
+
+        // ── الكسور: تُضاف إلى الرقم السابق ──
+        if ((n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75)) {
+          if (numbers.isNotEmpty) {
+            numbers[numbers.length - 1] =
+                double.parse((numbers.last + n).toStringAsFixed(3));
+          }
+          // إذا لم يكن هناك رقم سابق، تُهمَل (لا يُضاف كسر وحده كرقم)
           continue;
         }
-        // أعداد الوحدات مع عشرات (مثل: خمسة وعشرين)
+
+        // ── وحدات (1-9) يعقبها عشرات بـ "و": خمسة وعشرين = 25 ──
         if (n >= 1 && n <= 9 && i + 1 < words.length) {
           var nextW = words[i + 1];
           if (nextW.startsWith('و')) nextW = nextW.substring(1);
@@ -405,19 +411,32 @@ class NLPParser {
             final nextN = _arabicNumbers[nextW]!;
             if (nextN >= 20 && nextN % 10 == 0) {
               final compound = n + nextN;
-              // تجنب التكرار
-              if (!numbers.any((existing) => existing == compound)) {
-                numbers.add(compound);
-              }
-              i++; // تخطي الكلمة التالية
+              if (!numbers.contains(compound)) numbers.add(compound);
+              i++; // تخطي كلمة العشرات
               continue;
             }
           }
         }
-        // تجنب إضافة 0 كرقم إذا كانت بالفعل في القائمة
+
+        // ── عشرات (20,30,…) تعقبها وحدات بـ "و": عشرين وخمسة = 25 ──
+        if (n >= 20 && n % 10 == 0 && i + 1 < words.length) {
+          var nextW = words[i + 1];
+          if (nextW.startsWith('و')) nextW = nextW.substring(1);
+          if (_arabicNumbers.containsKey(nextW)) {
+            final nextN = _arabicNumbers[nextW]!;
+            if (nextN >= 1 && nextN <= 9) {
+              final compound = n + nextN;
+              if (!numbers.contains(compound)) numbers.add(compound);
+              i++; // تخطي كلمة الوحدات
+              continue;
+            }
+          }
+        }
+
+        // ── رقم عادي: تجنب التكرار ──
         if (n == 0 && numbers.contains(0)) continue;
-        // تجنب إضافة رقم مكرر من العبارات المركبة
-        if (!numbers.any((existing) => existing == n || (n > 0 && existing == n))) {
+        // إصلاح: الشرط المكرر (n > 0 && existing == n) هو نفسه (existing == n)
+        if (!numbers.contains(n)) {
           numbers.add(n);
         }
       }

@@ -22,6 +22,9 @@ class VoiceService {
   bool _isRecording = false;
   bool _isPaused = false;
 
+  // Safety timeout timer — stored so it can be cancelled if needed
+  Timer? _safetyTimer;
+
   // Streaming partials for continuous mode
   StreamController<String>? _partialController;
   Stream<String>? get partialStream => _partialController?.stream;
@@ -38,6 +41,7 @@ class VoiceService {
   }
 
   /// Initialize the speech recognizer once. Subsequent calls are no-ops.
+  /// يُجرّب ar_EG أولاً ثم ar_SA ثم ar كـ fallback.
   Future<bool> initSpeech() async {
     if (_initialized && _speechAvailable) return true;
     try {
@@ -63,10 +67,31 @@ class VoiceService {
     return _speechAvailable;
   }
 
+  /// اختيار أفضل locale عربي متاح على الجهاز.
+  /// يُعطي الأولوية لـ ar_EG ثم ar_SA ثم أي ar_XX ثم ar.
+  Future<String> _bestArabicLocale() async {
+    try {
+      final locales = await _speech.locales();
+      final ids = locales.map((l) => l.localeId).toList();
+      const preferred = ['ar_EG', 'ar_SA', 'ar_AE', 'ar_KW', 'ar'];
+      for (final loc in preferred) {
+        if (ids.contains(loc)) return loc;
+      }
+      // أي locale يبدأ بـ 'ar'
+      final arAny = ids.firstWhere(
+        (id) => id.toLowerCase().startsWith('ar'),
+        orElse: () => 'ar_EG',
+      );
+      return arAny;
+    } catch (_) {
+      return 'ar_EG';
+    }
+  }
+
   /// Listen ONCE — returns full transcript when speech ends or timeout fires.
   /// Optionally streams partials via [onPartial].
   Future<String> listenOnce({
-    String localeId = 'ar_EG',
+    String? localeId, // null = اختيار تلقائي لأفضل locale عربي
     Duration listenFor = const Duration(seconds: 12),
     Duration pauseFor = const Duration(seconds: 3),
     void Function(String partial)? onPartial,
@@ -88,12 +113,21 @@ class VoiceService {
       await Future.delayed(const Duration(milliseconds: 120));
     }
 
+    // ألغِ أي timer سابق قبل البدء
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
+
+    // اختيار أفضل locale متاح إذا لم يُحدَّد
+    final effectiveLocale = localeId ?? await _bestArabicLocale();
+
     final completer = Completer<String>();
     String finalText = '';
 
     void completeOnce(String txt) {
       if (!completer.isCompleted) {
         _isListening = false;
+        _safetyTimer?.cancel();
+        _safetyTimer = null;
         completer.complete(txt);
       }
     }
@@ -101,7 +135,7 @@ class VoiceService {
     _isListening = true;
     try {
       await _speech.listen(
-        localeId: localeId,
+        localeId: effectiveLocale,
         listenFor: listenFor,
         pauseFor: pauseFor,
         onResult: (result) {
@@ -119,12 +153,14 @@ class VoiceService {
       );
     } catch (e) {
       _isListening = false;
+      _safetyTimer?.cancel();
+      _safetyTimer = null;
       if (!completer.isCompleted) completer.completeError(e.toString());
       return completer.future;
     }
 
-    // Safety timeout — guarantees a result even if onResult final never fires
-    Future.delayed(listenFor + const Duration(seconds: 1), () async {
+    // Safety timeout — قابل للإلغاء لمنع memory leak بعد dispose
+    _safetyTimer = Timer(listenFor + const Duration(seconds: 1), () async {
       if (!completer.isCompleted) {
         try {
           await _speech.stop();
@@ -150,6 +186,10 @@ class VoiceService {
   }
 
   Future<void> cancelListening() async {
+    // ألغِ timeout timer أولاً لمنع استدعاء _speech.stop بعد dispose
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
+
     if (_isListening) {
       try {
         await _speech.cancel();
@@ -217,6 +257,9 @@ class VoiceService {
   }
 
   Future<void> dispose() async {
+    // ألغِ الـ timer أولاً قبل أي عملية أخرى
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     try {
       await cancelListening();
     } catch (e, st) {

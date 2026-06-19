@@ -192,12 +192,16 @@ class AdminService {
   }
 
   /// التحقق من بيانات تسجيل الدخول محلياً (للاستخدام كـ fallback)
+  /// ملاحظة أمنية: كلمة المرور مشفّرة بـ base64 فقط (ليس hash حقيقي).
+  /// هذا مقبول للنسخة المحلية/offline حيث لا يوجد سيرفر.
+  /// في الإنتاج يُفضَّل استخدام bcrypt أو argon2.
   static Future<User?> verifyCredentials(
     String username,
     String password,
   ) async {
     await ensureOpen();
     final box = Hive.box(_usersBox);
+    final inputHash = base64Encode(utf8.encode(password));
     for (final key in box.keys) {
       try {
         final raw = box.get(key);
@@ -207,18 +211,20 @@ class AdminService {
         if (dbUsername != username.toLowerCase()) continue;
 
         final dbHash = data['password_hash']?.toString() ?? '';
-        final inputHash = base64Encode(utf8.encode(password));
         if (dbHash == inputHash) {
-          // تحديث آخر دخول
-          final user = User.fromJson(data).copyWith(lastLogin: DateTime.now());
-          await _saveUserDirect(user);
+          // فحص الحالة أولاً قبل تحديث آخر دخول
+          final user = User.fromJson(data);
           if (!user.isActive) {
             throw Exception('هذا الحساب موقوف. تواصل مع المدير.');
           }
-          return user;
+          // تحديث آخر دخول
+          final updated = user.copyWith(lastLogin: DateTime.now());
+          await _saveUserDirect(updated);
+          return updated;
         }
       } catch (e) {
         if (e.toString().contains('موقوف')) rethrow;
+        // تجاهل أخطاء JSON parsing للمفاتيح الأخرى
       }
     }
     return null;

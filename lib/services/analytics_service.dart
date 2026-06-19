@@ -1,6 +1,7 @@
-import 'dart:io';
+import 'dart:io' show File;
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -102,6 +103,7 @@ class AnalyticsService {
 
   /// Build a professional Excel file matching the official Egyptian
   /// school grade-tracking sheet format.
+  /// على منصة الويب: يُعيد false مع رسالة خطأ واضحة (dart:io غير متاح).
   static Future<bool> exportToExcel({
     required List<Student> students,
     required List<GradeField> fields,
@@ -110,6 +112,20 @@ class AnalyticsService {
     String? teacherName,
     String? schoolName,
   }) async {
+    // Web لا يدعم حفظ ملفات عبر dart:io — استخدم CSV بدلاً منه
+    if (kIsWeb) {
+      ErrorHandler.logError(
+        'exportToExcel: غير مدعوم على الويب — يُحوَّل تلقائياً لـ CSV',
+        null,
+        'AnalyticsService.exportToExcel.webFallback',
+      );
+      return exportToCSV(
+        students: students,
+        fields: fields,
+        className: className,
+        subject: subject,
+      );
+    }
     try {
       final excel = Excel.createExcel();
       final defaultSheetName = excel.getDefaultSheet() ?? 'Sheet1';
@@ -773,7 +789,7 @@ class AnalyticsService {
     }
   }
 
-  /// Legacy CSV export (kept as fallback).
+  /// Legacy CSV export (kept as fallback + Web-compatible).
   static Future<bool> exportToCSV({
     required List<Student> students,
     required List<GradeField> fields,
@@ -825,6 +841,16 @@ class AnalyticsService {
       final csv = const ListToCsvConverter().convert(rows);
       final content = '\uFEFF$csv';
 
+      // Web: لا يوجد file system — نشارك النص مباشرةً عبر share_plus
+      if (kIsWeb) {
+        await Share.share(
+          content,
+          subject: 'درجات $className - $subject',
+        );
+        return true;
+      }
+
+      // Mobile/Desktop: حفظ ملف CSV ثم مشاركته
       final dir = await getApplicationDocumentsDirectory();
       final fileName =
           'Grades_${_safeName(className)}_${_safeName(subject)}_'

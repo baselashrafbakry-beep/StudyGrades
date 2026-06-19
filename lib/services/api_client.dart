@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user_model.dart';
@@ -271,30 +272,39 @@ class ApiClient {
 
   // ============ VOICE TRANSCRIBE ============
   Future<String> transcribeAudio(String filePath) async {
-    final file = File(filePath);
-    if (!file.existsSync()) {
+    // Web platform لا تدعم dart:io File — أعد رسالة واضحة
+    if (kIsWeb) {
+      throw 'تحويل الصوت لنص عبر السيرفر غير متاح على متصفح الويب. '
+          'استخدم التطبيق على الجهاز المحمول للحصول على هذه الميزة.';
+    }
+
+    if (!File(filePath).existsSync()) {
       throw 'الملف الصوتي غير موجود';
     }
-    final form = FormData.fromMap({
-      'audio': await MultipartFile.fromFile(
-        filePath,
-        filename: filePath.split('/').last,
-      ),
+
+    // يستخدم _withRetry مثل بقية الـ endpoints لإعادة المحاولة عند الأخطاء العابرة
+    return _withRetry(() async {
+      final form = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(
+          filePath,
+          filename: filePath.split('/').last,
+        ),
+      });
+      final resp = await _dio.post(
+        '/voice/transcribe/',
+        data: form,
+        options: Options(
+          headers: {'Content-Type': 'multipart/form-data'},
+          receiveTimeout: const Duration(seconds: 90),
+          sendTimeout: const Duration(seconds: 90),
+        ),
+      );
+      final d = resp.data;
+      if (d is Map) {
+        return (d['transcript'] ?? d['text'] ?? '').toString();
+      }
+      return '';
     });
-    final resp = await _dio.post(
-      '/voice/transcribe/',
-      data: form,
-      options: Options(
-        headers: {'Content-Type': 'multipart/form-data'},
-        receiveTimeout: const Duration(seconds: 90),
-        sendTimeout: const Duration(seconds: 90),
-      ),
-    );
-    final d = resp.data;
-    if (d is Map) {
-      return (d['transcript'] ?? d['text'] ?? '').toString();
-    }
-    return '';
   }
 
   // ============ ERROR HANDLING ============

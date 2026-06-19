@@ -18,6 +18,12 @@ class GradingProvider extends ChangeNotifier {
   bool _isOnline = true;
   int _pendingCount = 0;
 
+  /// معرف الفصل الدراسي - قابل للتعيين ديناميكياً بدلاً من التشفير
+  int termId = 1;
+
+  /// رقم الأسبوع - قابل للتعيين ديناميكياً بدلاً من التشفير
+  int weekNumber = 1;
+
   ClassroomData? get classroom => _classroom;
   List<Student> get students => _classroom?.students ?? [];
   List<GradeField> get fields => _classroom?.fields ?? [];
@@ -255,8 +261,8 @@ class GradingProvider extends ChangeNotifier {
     if (_isOnline) {
       try {
         await apiClient.syncGrades(
-          termId: 1,
-          weekNumber: 1,
+          termId: termId,
+          weekNumber: weekNumber,
           subject: c.subject,
           classId: c.classId,
           grades: [
@@ -333,8 +339,8 @@ class GradingProvider extends ChangeNotifier {
           if (cEntry.key == 0) continue;
           try {
             await apiClient.syncGrades(
-              termId: 1,
-              weekNumber: 1,
+              termId: termId,
+              weekNumber: weekNumber,
               subject: entry.key,
               classId: cEntry.key,
               grades: cEntry.value
