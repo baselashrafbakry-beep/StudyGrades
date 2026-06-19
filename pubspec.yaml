@@ -1,5 +1,5 @@
 name: voice_grader
-description: "StudyGrades 2026 - نظام رصد الدرجات الصوتي الاحترافي للمعلمين"
+description: "StudyGrades - نظام رصد الدرجات الصوتي الاحترافي للمعلمين"
 publish_to: 'none'
 version: 1.0.0+1
 
