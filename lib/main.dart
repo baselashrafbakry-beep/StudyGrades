@@ -44,8 +44,12 @@ void main() async {
       ),
     );
 
-    // 5. تعطيل تحميل الخطوط من الإنترنت (نستخدم خطوط محلية)
-    GoogleFonts.config.allowRuntimeFetching = false;
+    // 5. تعطيل تحميل الخطوط من الإنترنت على المنصات المحلية فقط
+    // على Web: نسمح بالتحميل لأن Cairo-Bold وغيرها غير مدرجة في الأصول
+    // على Mobile/Desktop: نمنع لتوفير البيانات ونستخدم الخط المحلي (Cairo-Regular.ttf)
+    if (!kIsWeb) {
+      GoogleFonts.config.allowRuntimeFetching = false;
+    }
 
     // 6. تهيئة Hive للتخزين المحلي
     try {
