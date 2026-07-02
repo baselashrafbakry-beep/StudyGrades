@@ -417,7 +417,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final buckets = List.filled(4, 0);
     for (final s in students) {
       if (s.grades.isEmpty) continue;
-      final pct = (s.total / stats.totalPossible) * 100;
+      // clamp لضمان pct بين 0 و 100 (حماية من قيم سالبة أو أكبر من 100)
+      final pct = ((s.total / stats.totalPossible) * 100).clamp(0.0, 100.0);
       if (pct < 25) {
         buckets[0]++;
       } else if (pct < 50) {
@@ -425,6 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else if (pct < 75) {
         buckets[2]++;
       } else {
+        // 75% → 100% (يشمل 100% بشكل صريح)
         buckets[3]++;
       }
     }

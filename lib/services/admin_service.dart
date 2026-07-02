@@ -37,6 +37,9 @@ class AdminService {
   static const String appName           = 'Study Grades Voice';
   static const String appNameAr         = 'نظام رصد الدرجات الصوتي';
   static const String copyrightYear     = '2026';
+  static const String packageName       = 'com.voicegrader.grader';
+  static const String serverUrl         = 'studygrades2026.pythonanywhere.com';
+  static const String serverUrlFull     = 'https://studygrades2026.pythonanywhere.com';
 
   /// تهيئة الحساب الافتراضي للمطور (يتم استدعاؤها عند البدء)
   static Future<void> initDefaultDeveloper() async {

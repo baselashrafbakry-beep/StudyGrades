@@ -207,8 +207,9 @@ class UserSubscription {
     final expiry = json['expiry_date'] != null
         ? DateTime.tryParse(json['expiry_date'].toString())
         : null;
+    // إصلاح: daysRemaining يجب أن يكون 0 عند الانتهاء وليس سالباً
     final days = expiry != null
-        ? expiry.difference(DateTime.now()).inDays
+        ? expiry.difference(DateTime.now()).inDays.clamp(-1, 9999)
         : -1;
     return UserSubscription(
       plan: plan,

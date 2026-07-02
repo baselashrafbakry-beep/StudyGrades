@@ -66,8 +66,11 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
   ];
 
   final TextEditingController _customCtrl = TextEditingController();
+  bool _isLoading = false; // حماية من double-tap
 
   Future<void> _selectSubject(String subject, String displayName) async {
+    if (_isLoading) return; // منع الضغط المزدوج
+    setState(() => _isLoading = true);
     final grading = context.read<GradingProvider>();
     showDialog(
       context: context,
@@ -76,11 +79,15 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
         child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
-    await grading.loadClassroom(
-      classId: widget.classId,
-      className: widget.className,
-      subject: subject,
-    );
+    try {
+      await grading.loadClassroom(
+        classId: widget.classId,
+        className: widget.className,
+        subject: subject,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
@@ -234,7 +235,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'v2.0.0',
+                      'v${AdminService.appVersion}',
                       style: GoogleFonts.cairo(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.7),
@@ -242,7 +243,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '© 2026 — م. باسل أشرف | 01014543845',
+                      '© ${AdminService.copyrightYear} — ${AdminService.developerName} | ${AdminService.developerPhone}',
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.6),

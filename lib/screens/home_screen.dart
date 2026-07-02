@@ -583,9 +583,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       return;
                     }
                     _showSnack('جاري المزامنة...');
-                    await grading.syncPendingGrades();
+                    final synced = await grading.syncPendingGrades();
                     if (!mounted) return;
-                    _showSnack('تمت المزامنة بنجاح');
+                    _showSnack(synced > 0
+                        ? 'تمت مزامنة $synced درجة بنجاح ✅'
+                        : 'فشلت المزامنة — تحقق من الاتصال');
                   },
                 ),
               ),

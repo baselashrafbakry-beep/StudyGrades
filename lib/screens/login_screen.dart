@@ -660,7 +660,7 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 Text(
-                  'studygrades2026.pythonanywhere.com',
+                  AdminService.serverUrl,
                   style: GoogleFonts.cairo(
                     fontSize: 11,
                     color: AppColors.textSecondary,
@@ -672,8 +672,8 @@ class _LoginScreenState extends State<LoginScreen>
           // زر نسخ السيرفر
           IconButton(
             onPressed: () {
-              Clipboard.setData(const ClipboardData(
-                text: 'https://studygrades2026.pythonanywhere.com',
+              Clipboard.setData(ClipboardData(
+                text: AdminService.serverUrlFull,
               ));
               Fluttertoast.showToast(
                 msg: 'تم نسخ رابط السيرفر',

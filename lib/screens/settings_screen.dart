@@ -491,14 +491,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.school_rounded,
-                        color: Colors.white,
-                        size: 14,
+                      Text(
+                        _roleIcon(user?.role),
+                        style: const TextStyle(fontSize: 13),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        user?.role == 'manager' ? 'مدير' : 'معلم',
+                        _roleLabel(user?.role),
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           color: Colors.white,
@@ -912,6 +911,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // دوال مساعدة لعرض الدور بشكل صحيح لجميع الأدوار الأربعة
+  String _roleLabel(String? role) {
+    switch (role) {
+      case 'developer': return 'مطوّر';
+      case 'admin':     return 'مدير';
+      case 'manager':   return 'مشرف';
+      default:          return 'معلم';
+    }
+  }
+
+  String _roleIcon(String? role) {
+    switch (role) {
+      case 'developer': return '👨‍💻';
+      case 'admin':     return '🛡️';
+      case 'manager':   return '🎓';
+      default:          return '📚';
+    }
+  }
+
   Widget _langOption(String name, String code, bool selected) {
     return ListTile(
       title: Text(name, style: GoogleFonts.cairo()),
@@ -939,11 +957,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return;
     }
+    final pendingBefore = grading.pendingCount;
     final synced = await grading.syncPendingGrades();
     if (!mounted) return;
+    String msg;
+    Color bg;
+    if (synced > 0) {
+      msg = 'تمت مزامنة $synced عنصر بنجاح ✅';
+      bg = AppColors.success;
+    } else if (pendingBefore == 0) {
+      msg = 'لا توجد بيانات بانتظار المزامنة';
+      bg = AppColors.info;
+    } else {
+      msg = 'فشلت المزامنة — تحقق من الاتصال';
+      bg = AppColors.error;
+    }
     Fluttertoast.showToast(
-      msg: synced > 0 ? 'تمت مزامنة $synced عنصر' : 'فشلت المزامنة',
-      backgroundColor: synced > 0 ? AppColors.success : AppColors.error,
+      msg: msg,
+      backgroundColor: bg,
       textColor: Colors.white,
     );
   }

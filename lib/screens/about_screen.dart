@@ -193,12 +193,12 @@ class _AboutScreenState extends State<AboutScreen>
       iconColor: AppColors.primary,
       children: [
         _infoRow('الإصدار', 'v${AdminService.appVersion}'),
-        _infoRow('اسم الحزمة', 'com.voicegrader.grader'),
+        _infoRow('اسم الحزمة', AdminService.packageName),
         _infoRow('الإصدار المستهدف', 'Android 7.0+ / iOS 12+'),
         _infoRow('لغة البرمجة', 'Flutter (Dart)'),
         _infoRow('سنة الإصدار', AdminService.copyrightYear),
-        _infoRow('رابط السيرفر', 'studygrades2026.pythonanywhere.com',
-            copyValue: 'https://studygrades2026.pythonanywhere.com',
+        _infoRow('رابط السيرفر', AdminService.serverUrl,
+            copyValue: AdminService.serverUrlFull,
             copyLabel: 'رابط السيرفر'),
       ],
     );

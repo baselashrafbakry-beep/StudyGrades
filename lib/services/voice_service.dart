@@ -21,9 +21,12 @@ class VoiceService {
   String? _currentRecordingPath;
   bool _isRecording = false;
   bool _isPaused = false;
+  bool _disposed = false; // حماية من race condition بعد dispose
 
   // Safety timeout timer — stored so it can be cancelled if needed
   Timer? _safetyTimer;
+  // الـ Completer النشط — يُلغى فوراً عند dispose لمنع تعليق المستدعي
+  Completer<String>? _activeCompleter;
 
   // Streaming partials for continuous mode
   StreamController<String>? _partialController;
@@ -96,6 +99,8 @@ class VoiceService {
     Duration pauseFor = const Duration(seconds: 3),
     void Function(String partial)? onPartial,
   }) async {
+    // حماية: لا تبدأ إذا تمّ dispose بالفعل
+    if (_disposed) return '';
     if (!_speechAvailable) {
       final ok = await initSpeech();
       if (!ok) throw 'التعرف الصوتي غير متاح على هذا الجهاز';
@@ -121,6 +126,7 @@ class VoiceService {
     final effectiveLocale = localeId ?? await _bestArabicLocale();
 
     final completer = Completer<String>();
+    _activeCompleter = completer;
     String finalText = '';
 
     void completeOnce(String txt) {
@@ -128,6 +134,7 @@ class VoiceService {
         _isListening = false;
         _safetyTimer?.cancel();
         _safetyTimer = null;
+        _activeCompleter = null;
         completer.complete(txt);
       }
     }
@@ -257,9 +264,15 @@ class VoiceService {
   }
 
   Future<void> dispose() async {
+    _disposed = true;
     // ألغِ الـ timer أولاً قبل أي عملية أخرى
     _safetyTimer?.cancel();
     _safetyTimer = null;
+    // أكمل أي completer معلّق لمنع تعليق المستدعي إلى الأبد
+    if (_activeCompleter != null && !_activeCompleter!.isCompleted) {
+      _activeCompleter!.complete('');
+      _activeCompleter = null;
+    }
     try {
       await cancelListening();
     } catch (e, st) {

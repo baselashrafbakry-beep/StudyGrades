@@ -250,12 +250,10 @@ class GradingProvider extends ChangeNotifier {
       subject: c.subject,
     );
 
-    // وضع العرض التجريبي (class_id=0) لا يُزامن
+    // وضع العرض التجريبي (class_id=0) لا يُزامن ولا يُضاف للـ pendingQueue
+    // إصلاح: كان يُضيف للـ pending رغم أنه لن يُزامن أبداً → يراكم بيانات وهمية
     if (c.classId == 0) {
-      await StorageService.addPendingSync(payload);
-      _pendingCount = StorageService.pendingCount;
-      notifyListeners();
-      return false;
+      return false; // نجاح محلي فقط — بدون إضافة للـ queue
     }
 
     if (_isOnline) {

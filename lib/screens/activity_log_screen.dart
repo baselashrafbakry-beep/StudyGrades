@@ -41,14 +41,26 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       );
       return;
     }
+    final pendingBefore = _pending.length;
     final synced = await grading.syncPendingGrades();
     if (!mounted) return;
+    String msg;
+    Color bg;
+    if (synced > 0) {
+      msg = 'تمت مزامنة $synced عنصر بنجاح ✅';
+      bg = AppColors.success;
+    } else if (pendingBefore == 0) {
+      msg = 'لا توجد درجات بانتظار المزامنة';
+      bg = AppColors.info;
+    } else {
+      msg = 'فشلت المزامنة — تحقق من الاتصال';
+      bg = AppColors.error;
+    }
     Fluttertoast.showToast(
-      msg: synced > 0
-          ? 'تمت مزامنة $synced عنصر بنجاح'
-          : 'فشلت المزامنة',
-      backgroundColor: synced > 0 ? AppColors.success : AppColors.error,
+      msg: msg,
+      backgroundColor: bg,
       textColor: Colors.white,
+      toastLength: Toast.LENGTH_LONG,
     );
     _refresh();
   }

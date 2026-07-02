@@ -485,10 +485,18 @@ class NLPParser {
         final n = _arabicNumbers[matched]!;
 
         // ── الكسور: تُضاف إلى الرقم السابق ──
+        // إصلاح: نتأكد أن الكسر لم يُضَف بعد لمنع التراكم المزدوج
         if ((n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75)) {
           if (numbers.isNotEmpty) {
-            numbers[numbers.length - 1] =
-                double.parse((numbers.last + n).toStringAsFixed(3));
+            final prev = numbers.last;
+            // تجنب التراكم: إذا كان الرقم الأخير يحتوي بالفعل على كسر → لا تُضف
+            final prevWhole = prev.truncateToDouble();
+            if (prev == prevWhole) {
+              // الرقم الأخير صحيح (بدون كسر) → أضف الكسر
+              numbers[numbers.length - 1] =
+                  double.parse((prev + n).toStringAsFixed(3));
+            }
+            // إذا كان الرقم الأخير يحتوي على كسر بالفعل → تجاهل الكسر الجديد
           }
           // إذا لم يكن هناك رقم سابق، تُهمَل (لا يُضاف كسر وحده كرقم)
           continue;

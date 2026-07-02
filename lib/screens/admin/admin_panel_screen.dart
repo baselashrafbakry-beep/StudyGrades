@@ -510,7 +510,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             icon: Icons.api_rounded,
             iconColor: AppColors.info,
             title: 'إعدادات الخادم (Backend)',
-            subtitle: 'studygrades2026.pythonanywhere.com',
+            subtitle: AdminService.serverUrl,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(

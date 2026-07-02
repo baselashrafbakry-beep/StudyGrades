@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/student_model.dart';
+import '../services/admin_service.dart';
 import '../utils/error_handler.dart';
 
 class ClassStats {
@@ -408,7 +409,7 @@ class AnalyticsService {
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIdx),
       );
       c.value = TextCellValue(
-          'StudyGrades 2026 - نظام رصد الدرجات الإلكتروني');
+          '${AdminService.appName} - ${AdminService.appNameAr}');
       c.cellStyle = subTitleStyle;
       sheet.setRowHeight(rowIdx, 22);
       rowIdx++;
@@ -780,7 +781,7 @@ class AnalyticsService {
       await Share.shareXFiles(
         [XFile(file.path)],
         subject: 'كشف درجات $className - $subject',
-        text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
+        text: 'تم تصدير الدرجات من تطبيق ${AdminService.appName}',
       );
       return true;
     } catch (e, st) {
@@ -861,7 +862,7 @@ class AnalyticsService {
       await Share.shareXFiles(
         [XFile(file.path)],
         subject: 'درجات $className - $subject',
-        text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
+        text: 'تم تصدير الدرجات من تطبيق ${AdminService.appName}',
       );
       return true;
     } catch (e, st) {

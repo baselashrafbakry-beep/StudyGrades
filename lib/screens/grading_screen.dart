@@ -322,7 +322,9 @@ class _GradingScreenState extends State<GradingScreen> {
   }
 
   Future<_SmartAction> _onAllFieldsFilled() async {
-    _autoLoopActive = false;
+    // لا نوقف _autoLoopActive هنا — نتركه true حتى يقرر الـ dialog
+    // نوقف الاستماع مؤقتاً فقط
+    await voiceService.cancelListening();
     await Future.delayed(const Duration(milliseconds: 350));
     if (!mounted) return _SmartAction.stop;
 
@@ -335,17 +337,22 @@ class _GradingScreenState extends State<GradingScreen> {
       if (!mounted) return _SmartAction.stop;
       final grading = context.read<GradingProvider>();
       if (grading.currentStudent != null) {
+        // لا زال هناك طلاب — أعد تفعيل الحلقة
         _autoLoopActive = true;
         _resetFieldFocus(toFirstEmpty: true);
+      } else {
+        // انتهت القائمة
+        _autoLoopActive = false;
       }
       return _SmartAction.next;
     } else if (confirmed == false) {
-      // edit mode
+      // وضع التعديل — أعد الاستماع
       _resetFieldFocus(toFirstEmpty: true);
       _autoLoopActive = true;
       return _SmartAction.none;
     } else {
-      // dismissed -> stop loop
+      // إغلاق بالضغط خارج الـ dialog → إيقاف الحلقة
+      _autoLoopActive = false;
       return _SmartAction.stop;
     }
   }
@@ -723,9 +730,13 @@ class _GradingScreenState extends State<GradingScreen> {
   Future<void> _exportExcel() async {
     final grading = context.read<GradingProvider>();
     final auth = context.read<AuthProvider>();
-    if (grading.students.isEmpty) return;
+    if (grading.students.isEmpty) {
+      _toast('لا يوجد طلاب للتصدير', error: true);
+      return;
+    }
     if (_autoLoopActive) await _stopAutoLoop(silent: true);
-    _toast('جاري إعداد ملف Excel الرسمي...');
+    // على الويب: يُصدَّر CSV تلقائياً (dart:io غير متاح)
+    _toast('جاري إعداد الملف للتصدير...');
     final ok = await AnalyticsService.exportToExcel(
       students: grading.students,
       fields: grading.fields,
@@ -735,9 +746,9 @@ class _GradingScreenState extends State<GradingScreen> {
     );
     if (!mounted) return;
     if (!ok) {
-      _toast('فشل تصدير ملف Excel', error: true);
+      _toast('فشل التصدير — حاول مرة أخرى', error: true);
     } else {
-      _toast('تم تصدير ملف Excel بنجاح', success: true);
+      _toast('تم التصدير بنجاح ✅', success: true);
     }
   }
 
