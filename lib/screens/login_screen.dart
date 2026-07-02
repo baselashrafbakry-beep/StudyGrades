@@ -672,7 +672,7 @@ class _LoginScreenState extends State<LoginScreen>
           // زر نسخ السيرفر
           IconButton(
             onPressed: () {
-              Clipboard.setData(ClipboardData(
+              Clipboard.setData(const ClipboardData(
                 text: AdminService.serverUrlFull,
               ));
               Fluttertoast.showToast(

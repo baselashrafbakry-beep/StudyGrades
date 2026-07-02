@@ -367,10 +367,12 @@ class _GradingScreenState extends State<GradingScreen> {
     await _save(silent: true);
     if (!mounted) return;
     if (grading.currentIndex >= grading.students.length - 1) {
+      // آخر طالب — ننهي الجلسة ونُفعّل شاشة الاحتفال
       _autoLoopActive = false;
       HapticFeedback.heavyImpact();
-      // انتقل للشاشة الاحتفالية بدلاً من مجرد toast
-      grading.nextStudent(); // سيصبح null → شاشة الاحتفال
+      // finishGrading() يرفع علم _gradingFinished → currentStudent يُرجع null
+      // → الشرط (cur == null) في build() يُظهر شاشة الاحتفال
+      grading.finishGrading();
       if (mounted) setState(() {});
       return;
     }
@@ -718,7 +720,11 @@ class _GradingScreenState extends State<GradingScreen> {
     if (!mounted) return;
     final grading = context.read<GradingProvider>();
     if (grading.currentIndex >= grading.students.length - 1) {
-      _toast('انتهيت من جميع الطلاب 🎉', success: true);
+      // آخر طالب — ننهي الجلسة ونُظهر شاشة الاحتفال
+      _autoLoopActive = false;
+      HapticFeedback.heavyImpact();
+      grading.finishGrading();
+      if (mounted) setState(() {});
       return;
     }
     grading.nextStudent();

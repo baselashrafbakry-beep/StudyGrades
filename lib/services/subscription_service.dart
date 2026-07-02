@@ -113,9 +113,9 @@ class SubscriptionService {
   // ======================================================================
   static Future<UserSubscription> getCurrentSubscription() async {
     try {
-      // محاولة القراءة من Hive أولاً
-      if (Hive.isBoxOpen('settings')) {
-        final box = Hive.box('settings');
+      // محاولة القراءة من Hive أولاً — الاسم الصحيح هو 'settings_box' (مُعرَّف في StorageService)
+      if (Hive.isBoxOpen('settings_box')) {
+        final box = Hive.box('settings_box');
         final raw = box.get(_boxKey);
         if (raw is String && raw.isNotEmpty) {
           final sub = UserSubscription.fromJson(
@@ -178,8 +178,9 @@ class SubscriptionService {
   static Future<void> _saveSubscription(UserSubscription sub) async {
     try {
       final json = jsonEncode(sub.toJson());
-      if (Hive.isBoxOpen('settings')) {
-        Hive.box('settings').put(_boxKey, json);
+      // الاسم الصحيح هو 'settings_box' — يتطابق مع StorageService.settingsBoxName
+      if (Hive.isBoxOpen('settings_box')) {
+        Hive.box('settings_box').put(_boxKey, json);
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefKey, json);

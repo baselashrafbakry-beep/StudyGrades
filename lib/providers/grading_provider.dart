@@ -11,6 +11,7 @@ import '../utils/error_handler.dart';
 class GradingProvider extends ChangeNotifier {
   ClassroomData? _classroom;
   int _currentIndex = 0;
+  bool _gradingFinished = false; // علم انتهاء الدرجات — يجعل currentStudent يرجع null لتفعيل شاشة الاحتفال
   bool _isLoading = false;
   bool _isSyncing = false;
   String? _error;
@@ -29,8 +30,12 @@ class GradingProvider extends ChangeNotifier {
   List<GradeField> get fields => _classroom?.fields ?? [];
   int get currentIndex => _currentIndex;
 
-  /// الطالب الحالي مع حماية من الفهرس خارج الحدود
+  bool get isGradingFinished => _gradingFinished;
+
+  /// الطالب الحالي — يرجع null عند انتهاء جميع الطلاب (يتيح عرض شاشة الاحتفال)
   Student? get currentStudent {
+    // إذا رُفع علم الانتهاء → شاشة الاحتفال تظهر في grading_screen.dart
+    if (_gradingFinished) return null;
     final list = students;
     if (list.isEmpty) return null;
     final safeIdx = _currentIndex.clamp(0, list.length - 1);
@@ -198,12 +203,20 @@ class GradingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// انتقال للطالب التالي — للاستخدام العادي بين الطلاب
   void nextStudent() {
     final list = students;
     if (_currentIndex < list.length - 1) {
       _currentIndex++;
       notifyListeners();
     }
+    // لاحظ: عند آخر طالب يستخدم finishGrading() بدلاً من هذه
+  }
+
+  /// إنهاء جلسة التصحيح — يرفع علم الانتهاء لتفعيل شاشة الاحتفال
+  void finishGrading() {
+    _gradingFinished = true;
+    notifyListeners();
   }
 
   void previousStudent() {
@@ -383,6 +396,7 @@ class GradingProvider extends ChangeNotifier {
   void reset() {
     _classroom = null;
     _currentIndex = 0;
+    _gradingFinished = false; // إعادة تعيين علم الانتهاء عند بدء جلسة جديدة
     _error = null;
     _lastSyncMessage = null;
     notifyListeners();

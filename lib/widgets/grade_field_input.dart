@@ -130,7 +130,10 @@ class _GradeFieldInputState extends State<GradeFieldInput> {
                   ),
                   onChanged: (txt) {
                     final v = double.tryParse(txt);
-                    if (v != null) widget.onChanged(v);
+                    if (v != null && v.isFinite && v >= 0) {
+                      // تطبيق clamp لمنع إدخال قيمة أكبر من الحد الأقصى
+                      widget.onChanged(v.clamp(0.0, widget.field.max));
+                    }
                   },
                 ),
               ),
