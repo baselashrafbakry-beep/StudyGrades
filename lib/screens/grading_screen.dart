@@ -361,8 +361,10 @@ class _GradingScreenState extends State<GradingScreen> {
     if (!mounted) return;
     if (grading.currentIndex >= grading.students.length - 1) {
       _autoLoopActive = false;
-      _toast('انتهيت من جميع الطلاب 🎉', success: true);
       HapticFeedback.heavyImpact();
+      // انتقل للشاشة الاحتفالية بدلاً من مجرد toast
+      grading.nextStudent(); // سيصبح null → شاشة الاحتفال
+      if (mounted) setState(() {});
       return;
     }
     grading.nextStudent();
@@ -767,9 +769,149 @@ class _GradingScreenState extends State<GradingScreen> {
     final idx = grading.currentIndex;
 
     if (cur == null) {
+      // حالة: انتهت قائمة الطلاب بالكامل (بعد آخر طالب)
       return Scaffold(
-        appBar: AppBar(title: Text(widget.className)),
-        body: const Center(child: CircularProgressIndicator()),
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
+                decoration: const BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius:
+                      BorderRadius.vertical(bottom: Radius.circular(22)),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_forward_rounded,
+                          color: Colors.white),
+                    ),
+                    Expanded(
+                      child: Text(
+                        widget.className,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.cairo(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.celebration_rounded,
+                            size: 62,
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        Text(
+                          'أحسنت العمل رائعاً! مبروك عليك',
+                          style: GoogleFonts.cairo(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'تم الانتهاء من جميع طلاب\n${widget.className} • ${widget.subject}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.cairo(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                            height: 1.6,
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => DashboardScreen(
+                                      className: widget.className,
+                                      subject: widget.subject,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                    Icons.analytics_rounded,
+                                    size: 18),
+                                label: Text(
+                                  'عرض التحليلات',
+                                  style: GoogleFonts.cairo(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(
+                                      color: AppColors.primary),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 13),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _exportExcel,
+                                icon: const Icon(
+                                    Icons.table_chart_rounded,
+                                    size: 18),
+                                label: Text(
+                                  'تصدير Excel',
+                                  style: GoogleFonts.cairo(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.success,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.home_rounded, size: 18),
+                          label: Text(
+                            'العودة للصفحة الرئيسية',
+                            style: GoogleFonts.cairo(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

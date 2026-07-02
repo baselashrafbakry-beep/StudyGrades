@@ -135,9 +135,6 @@ class VoiceService {
     _isListening = true;
     try {
       await _speech.listen(
-        localeId: effectiveLocale,
-        listenFor: listenFor,
-        pauseFor: pauseFor,
         onResult: (result) {
           finalText = result.recognizedWords;
           if (onPartial != null) onPartial(finalText);
@@ -146,6 +143,9 @@ class VoiceService {
           }
         },
         listenOptions: stt.SpeechListenOptions(
+          localeId: effectiveLocale,
+          listenFor: listenFor,
+          pauseFor: pauseFor,
           partialResults: true,
           cancelOnError: true,
           listenMode: stt.ListenMode.dictation,

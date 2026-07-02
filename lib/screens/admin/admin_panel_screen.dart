@@ -630,7 +630,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'StudyGrades 2026 — Admin Panel',
+            '${AdminService.appName} v${AdminService.appVersion} — Admin Panel',
             style: GoogleFonts.cairo(
               fontSize: 11,
               color: AppColors.textHint,

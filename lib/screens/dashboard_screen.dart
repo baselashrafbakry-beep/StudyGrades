@@ -26,6 +26,12 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _touchedBarIndex = -1;
 
+  Future<void> _handleRefresh() async {
+    // إعادة حساب الإحصاءات (البيانات تأتي من Provider)
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final grading = context.watch<GradingProvider>();
@@ -42,23 +48,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: students.isEmpty
                   ? _emptyState()
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 80),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildSummaryCards(stats),
-                          const SizedBox(height: 18),
-                          _buildCompletionCard(stats),
-                          const SizedBox(height: 18),
-                          _buildGradeDistribution(students, stats),
-                          const SizedBox(height: 18),
-                          _buildTopStudentsCard(students, fields, stats),
-                          const SizedBox(height: 18),
-                          _buildFieldAnalysisCard(students, fields),
-                          const SizedBox(height: 18),
-                          _buildPassFailPie(students, stats),
-                        ],
+                  : RefreshIndicator(
+                      onRefresh: _handleRefresh,
+                      color: AppColors.primary,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 80),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildSummaryCards(stats),
+                            const SizedBox(height: 18),
+                            _buildCompletionCard(stats),
+                            const SizedBox(height: 18),
+                            _buildGradeDistribution(students, stats),
+                            const SizedBox(height: 18),
+                            _buildTopStudentsCard(students, fields, stats),
+                            const SizedBox(height: 18),
+                            _buildFieldAnalysisCard(students, fields),
+                            const SizedBox(height: 18),
+                            _buildPassFailPie(students, stats),
+                            const SizedBox(height: 10),
+                            _buildFooterNote(students.length),
+                          ],
+                        ),
                       ),
                     ),
             ),
@@ -120,16 +133,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.analytics_outlined, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 14),
+          Container(
+            width: 110,
+            height: 110,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.analytics_outlined,
+              size: 56,
+              color: AppColors.primary.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(height: 20),
           Text(
-            'لا توجد بيانات لعرضها',
+            'لا توجد بيانات بعد',
             style: GoogleFonts.cairo(
-              fontSize: 16,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'أدخل درجات الطلاب أولاً\nثم ستظهر التحليلات هنا',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.cairo(
+              fontSize: 13,
               color: AppColors.textSecondary,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+            label: Text(
+              'العودة للرصد',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFooterNote(int total) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        'التحليلات مبنية على $total طالب • اسحب للأسفل للتحديث',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.cairo(
+          fontSize: 11,
+          color: AppColors.textHint,
+        ),
       ),
     );
   }

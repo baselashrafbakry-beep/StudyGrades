@@ -1,4 +1,4 @@
-package com.voicegrader.grader
+package com.myapp.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

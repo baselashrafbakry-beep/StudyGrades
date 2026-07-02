@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../providers/auth_provider.dart';
 import '../providers/grading_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/admin_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'activity_log_screen.dart';
 import 'admin/admin_panel_screen.dart';
+import 'subscription_screen.dart';
+import 'about_screen.dart';
+import 'activate_subscription_screen.dart';
 
 /// شاشة الإعدادات والتخصيصات
 class SettingsScreen extends StatefulWidget {
@@ -24,7 +29,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hapticFeedback = true;
   bool _showStudentNumbers = true;
   bool _useServerSpeech = false;
-  String _appVersion = '1.0.0';
 
   @override
   void initState() {
@@ -55,12 +59,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ) ??
           false;
     });
-    try {
-      // PackageInfo may not be available on web, gracefully fallback
-      _appVersion = '1.0.0';
-    } catch (_) {
-      // Fallback already set above
-    }
   }
 
   Future<void> _setSetting(String key, dynamic value) async {
@@ -220,28 +218,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildAdminPanelTile(),
                   ],
                   const SizedBox(height: 16),
+                  _sectionTitle('الاشتراك', Icons.star_rounded),
+                  _settingTile(
+                    icon: Icons.workspace_premium_rounded,
+                    iconColor: const Color(0xFF7B1FA2),
+                    title: 'خطط الاشتراك',
+                    subtitle: 'عرض الخطط والأسعار للترقية',
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7B1FA2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'ترقية',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SubscriptionScreen(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   _sectionTitle('عن التطبيق', Icons.info_outline_rounded),
                   _settingTile(
                     icon: Icons.info_rounded,
                     iconColor: AppColors.primary,
                     title: 'إصدار التطبيق',
-                    subtitle: 'StudyGrades 2026 v$_appVersion',
+                    subtitle: '${AdminService.appNameAr} v${AdminService.appVersion}',
                   ),
                   _settingTile(
-                    icon: Icons.person_outline_rounded,
+                    icon: Icons.person_rounded,
                     iconColor: AppColors.info,
                     title: 'المطور',
-                    subtitle: 'م/ باسل أشرف',
+                    subtitle: AdminService.developerName,
+                    trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                        size: 16, color: AppColors.textHint),
+                    onTap: () => _showDeveloperInfo(),
                   ),
                   _settingTile(
-                    icon: Icons.cloud_done_rounded,
+                    icon: Icons.phone_rounded,
                     iconColor: AppColors.success,
-                    title: 'السيرفر',
-                    subtitle: 'studygrades2026.pythonanywhere.com',
+                    title: 'واتساب للدعم',
+                    subtitle: AdminService.developerPhone,
+                    trailing: const Icon(Icons.copy_rounded,
+                        size: 16, color: AppColors.textHint),
+                    onTap: () {
+                      Clipboard.setData(
+                          const ClipboardData(text: AdminService.developerPhone));
+                      Fluttertoast.showToast(
+                        msg: 'تم نسخ رقم الواتساب',
+                        backgroundColor: AppColors.success,
+                        textColor: Colors.white,
+                      );
+                    },
+                  ),
+                  _settingTile(
+                    icon: Icons.email_rounded,
+                    iconColor: AppColors.warning,
+                    title: 'البريد الإلكتروني',
+                    subtitle: AdminService.developerEmail,
+                    trailing: const Icon(Icons.copy_rounded,
+                        size: 16, color: AppColors.textHint),
+                    onTap: () {
+                      Clipboard.setData(
+                          const ClipboardData(text: AdminService.developerEmail));
+                      Fluttertoast.showToast(
+                        msg: 'تم نسخ البريد الإلكتروني',
+                        backgroundColor: AppColors.success,
+                        textColor: Colors.white,
+                      );
+                    },
                   ),
                   _settingTile(
                     icon: Icons.help_outline_rounded,
-                    iconColor: AppColors.warning,
+                    iconColor: AppColors.info,
                     title: 'المساعدة والدعم',
                     subtitle: 'تعليمات استخدام التطبيق',
                     trailing: const Icon(
@@ -251,16 +310,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     onTap: () => _showHelpDialog(),
                   ),
+                  _settingTile(
+                    icon: Icons.info_outline_rounded,
+                    iconColor: AppColors.primary,
+                    title: 'عن التطبيق',
+                    subtitle: 'المعلومات التقنية والقانونية',
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppColors.textHint,
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AboutScreen()),
+                    ),
+                  ),
+                  _settingTile(
+                    icon: Icons.key_rounded,
+                    iconColor: AppColors.warning,
+                    title: 'تفعيل رمز اشتراك',
+                    subtitle: 'أدخل رمز التفعيل للترقية',
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'تفعيل',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ActivateSubscriptionScreen()),
+                    ),
+                  ),
                   const SizedBox(height: 22),
                   _logoutButton(),
                   const SizedBox(height: 18),
                   Center(
-                    child: Text(
-                      '© 2026 StudyGrades — كل الحقوق محفوظة',
-                      style: GoogleFonts.cairo(
-                        fontSize: 11,
-                        color: AppColors.textHint,
-                      ),
+                    child: Column(
+                      children: [
+                        Text(
+                          AdminService.appNameAr,
+                          style: GoogleFonts.cairo(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          'v${AdminService.appVersion} — تطوير: ${AdminService.developerName}',
+                          style: GoogleFonts.cairo(
+                            fontSize: 11,
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                        Text(
+                          '© ${AdminService.copyrightYear} — جميع الحقوق محفوظة',
+                          style: GoogleFonts.cairo(
+                            fontSize: 10,
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -943,6 +1063,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
               text,
               style: GoogleFonts.cairo(fontSize: 13),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeveloperInfo() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            const Text('👨‍💻', style: TextStyle(fontSize: 28)),
+            const SizedBox(width: 8),
+            Text(
+              'معلومات المطور',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.engineering_rounded,
+                      color: Colors.white, size: 40),
+                  const SizedBox(height: 8),
+                  Text(
+                    AdminService.developerName,
+                    style: GoogleFonts.cairo(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'مطور ${AdminService.appNameAr}',
+                    style: GoogleFonts.cairo(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.85)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _devInfoRow(
+              Icons.phone_rounded,
+              'واتساب',
+              AdminService.developerPhone,
+            ),
+            _devInfoRow(
+              Icons.email_rounded,
+              'البريد الإلكتروني',
+              AdminService.developerEmail,
+            ),
+            _devInfoRow(
+              Icons.apps_rounded,
+              'التطبيق',
+              '${AdminService.appName} v${AdminService.appVersion}',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('إغلاق', style: GoogleFonts.cairo()),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const SubscriptionScreen()),
+              );
+            },
+            child:
+                Text('الاشتراكات', style: GoogleFonts.cairo()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _devInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.primary, size: 20),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.cairo(
+                    fontSize: 11, color: AppColors.textSecondary),
+              ),
+              Text(
+                value,
+                style: GoogleFonts.cairo(
+                    fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
         ],
       ),

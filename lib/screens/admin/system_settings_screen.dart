@@ -38,14 +38,14 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
         '';
     _appNameCtrl.text = await AdminService.getSystemSetting<String>(
           'app_name',
-          defaultValue: 'StudyGrades 2026',
+          defaultValue: AdminService.appName,
         ) ??
-        '';
+        AdminService.appName;
     _supportEmailCtrl.text = await AdminService.getSystemSetting<String>(
           'support_email',
-          defaultValue: 'basel.ashraf@studygrades.com',
+          defaultValue: AdminService.developerEmail,
         ) ??
-        '';
+        AdminService.developerEmail;
     _maintenanceMode = await AdminService.getSystemSetting<bool>(
           'maintenance_mode',
           defaultValue: false,

@@ -8,22 +8,87 @@ import '../models/hierarchy_model.dart';
 import '../models/student_model.dart';
 import '../utils/error_handler.dart';
 
-/// API Client for StudyGrades 2026 backend (deployed on Netlify Functions).
-/// Handles JWT auth, automatic token refresh on 401, idempotent retry on
-/// transient network errors, and multipart audio uploads for voice
-/// transcription.
+/// --------------------------------------------------------------------------
+/// طبقة تخزين آمنة — تتعامل مع Web بأمان دون WASM warnings
+/// على Web: يُستخدم ذاكرة مؤقتة داخل الجلسة (session memory)
+/// على Mobile: يُستخدم FlutterSecureStorage المشفّر
+/// --------------------------------------------------------------------------
+class _SafeStorage {
+  static const FlutterSecureStorage _native = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
+
+  /// ذاكرة مؤقتة للويب (تُمسح عند إغلاق التبويب — مناسب للحماية)
+  static final Map<String, String> _webMemory = {};
+
+  static Future<String?> read({required String key}) async {
+    if (kIsWeb) return _webMemory[key];
+    try {
+      return await _native.read(key: key);
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, '_SafeStorage.read[$key]');
+      return null;
+    }
+  }
+
+  static Future<void> write({
+    required String key,
+    required String value,
+  }) async {
+    if (kIsWeb) {
+      _webMemory[key] = value;
+      return;
+    }
+    try {
+      await _native.write(key: key, value: value);
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, '_SafeStorage.write[$key]');
+    }
+  }
+
+  static Future<void> delete({required String key}) async {
+    if (kIsWeb) {
+      _webMemory.remove(key);
+      return;
+    }
+    try {
+      await _native.delete(key: key);
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, '_SafeStorage.delete[$key]');
+    }
+  }
+
+  // ignore: unused_element
+  static Future<void> _deleteAll() async {
+    if (kIsWeb) {
+      _webMemory.clear();
+      return;
+    }
+    try {
+      await _native.deleteAll();
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, '_SafeStorage.deleteAll');
+    }
+  }
+}
+
+/// --------------------------------------------------------------------------
+/// API Client — يتصل بـ Django REST backend عبر JWT + auto-refresh + retry
+/// --------------------------------------------------------------------------
 class ApiClient {
-  /// Base URL — overridable at compile time via `--dart-define=API_BASE_URL=...`
+  /// Base URL — قابل للتخصيص عند البناء عبر `--dart-define=API_BASE_URL=...`
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://studygrades-2026.netlify.app/api/mobile',
+    defaultValue: 'https://studygrades2026.pythonanywhere.com/api/mobile',
   );
 
   static const _accessKey = 'access_token';
   static const _refreshKey = 'refresh_token';
   static const _userKey = 'cached_user';
 
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   late final Dio _dio;
   Future<String?>? _refreshFuture;
 
@@ -41,14 +106,14 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await _storage.read(key: _accessKey);
+          final token = await _SafeStorage.read(key: _accessKey);
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           handler.next(options);
         },
         onError: (e, handler) async {
-          // 401 -> try refresh once and replay the original request
+          // 401 → جرّب تجديد التوكن مرة واحدة ثم أعد الطلب
           if (e.response?.statusCode == 401 &&
               e.requestOptions.path != '/token/refresh/' &&
               e.requestOptions.path != '/login/' &&
@@ -62,8 +127,8 @@ class ApiClient {
                 final cloneResp = await _dio.fetch(opts);
                 return handler.resolve(cloneResp);
               }
-            } catch (e, st) {
-              ErrorHandler.logError(e, st, 'ApiClient.refreshRetry');
+            } catch (err, st) {
+              ErrorHandler.logError(err, st, 'ApiClient.refreshRetry');
               await clearTokens();
             }
           }
@@ -77,7 +142,7 @@ class ApiClient {
     if (_refreshFuture != null) return _refreshFuture;
     _refreshFuture = (() async {
       try {
-        final refresh = await _storage.read(key: _refreshKey);
+        final refresh = await _SafeStorage.read(key: _refreshKey);
         if (refresh == null || refresh.isEmpty) return null;
         final resp = await Dio().post(
           '$baseUrl/token/refresh/',
@@ -86,7 +151,7 @@ class ApiClient {
         );
         final newAccess = resp.data['access']?.toString();
         if (newAccess != null) {
-          await _storage.write(key: _accessKey, value: newAccess);
+          await _SafeStorage.write(key: _accessKey, value: newAccess);
           return newAccess;
         }
       } catch (e, st) {
@@ -100,8 +165,7 @@ class ApiClient {
     return _refreshFuture;
   }
 
-  /// Generic exponential-backoff retry for idempotent requests
-  /// (GET, idempotent POSTs like sync).
+  /// Exponential-backoff retry للطلبات القابلة للتكرار
   Future<T> _withRetry<T>(
     Future<T> Function() task, {
     int maxAttempts = 3,
@@ -113,7 +177,6 @@ class ApiClient {
       try {
         return await task();
       } on DioException catch (e) {
-        // Only retry transient errors
         final transient = e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout ||
@@ -127,7 +190,9 @@ class ApiClient {
   }
 
   // ============ AUTH ============
-  Future<Map<String, dynamic>> login(String username, String password) async {
+
+  Future<Map<String, dynamic>> login(
+      String username, String password) async {
     Response? resp;
     final endpoints = ['/token/', '/login/', '/auth/login/'];
     DioException? lastErr;
@@ -141,15 +206,14 @@ class ApiClient {
         break;
       } on DioException catch (e) {
         lastErr = e;
-        if (e.response?.statusCode == 401 || e.response?.statusCode == 400) {
+        if (e.response?.statusCode == 401 ||
+            e.response?.statusCode == 400) {
           throw _formatError(e);
         }
-        // 404 / 405 -> try next endpoint
+        // 404/405 → جرّب endpoint التالي
       }
     }
-    if (resp == null) {
-      throw _formatError(lastErr!);
-    }
+    if (resp == null) throw _formatError(lastErr!);
 
     final data = Map<String, dynamic>.from(resp.data);
     final access = data['access']?.toString();
@@ -157,8 +221,8 @@ class ApiClient {
     if (access == null || refresh == null) {
       throw 'استجابة غير متوقعة من السيرفر';
     }
-    await _storage.write(key: _accessKey, value: access);
-    await _storage.write(key: _refreshKey, value: refresh);
+    await _SafeStorage.write(key: _accessKey, value: access);
+    await _SafeStorage.write(key: _refreshKey, value: refresh);
 
     User user;
     if (data['user'] is Map) {
@@ -166,7 +230,7 @@ class ApiClient {
     } else {
       user = User(id: 0, username: username, email: '', role: 'teacher');
     }
-    await _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
+    await _SafeStorage.write(key: _userKey, value: jsonEncode(user.toJson()));
     return {'user': user, 'access': access, 'refresh': refresh};
   }
 
@@ -180,18 +244,18 @@ class ApiClient {
   }
 
   Future<void> clearTokens() async {
-    await _storage.delete(key: _accessKey);
-    await _storage.delete(key: _refreshKey);
-    await _storage.delete(key: _userKey);
+    await _SafeStorage.delete(key: _accessKey);
+    await _SafeStorage.delete(key: _refreshKey);
+    await _SafeStorage.delete(key: _userKey);
   }
 
   Future<bool> isAuthenticated() async {
-    final t = await _storage.read(key: _accessKey);
+    final t = await _SafeStorage.read(key: _accessKey);
     return t != null && t.isNotEmpty;
   }
 
   Future<User?> getCachedUser() async {
-    final raw = await _storage.read(key: _userKey);
+    final raw = await _SafeStorage.read(key: _userKey);
     if (raw == null) return null;
     try {
       return User.fromJson(Map<String, dynamic>.from(jsonDecode(raw)));
@@ -202,6 +266,7 @@ class ApiClient {
   }
 
   // ============ HIERARCHY ============
+
   Future<List<HierarchyItem>> getHierarchy() async {
     final resp = await _withRetry(() => _dio.get('/hierarchy/'));
     final data = resp.data;
@@ -226,6 +291,7 @@ class ApiClient {
   }
 
   // ============ STUDENTS ============
+
   Future<ClassroomData> getStudents(
     int classId,
     String subject, {
@@ -236,18 +302,16 @@ class ApiClient {
           queryParameters: {'class_id': classId, 'subject': subject},
         ));
     final raw = resp.data;
-    if (raw is! Map) {
-      throw 'استجابة غير متوقعة من السيرفر للطلاب';
-    }
-    final data = Map<String, dynamic>.from(raw);
+    if (raw is! Map) throw 'استجابة غير متوقعة من السيرفر للطلاب';
     return ClassroomData.fromJson(
-      data,
+      Map<String, dynamic>.from(raw),
       className: className,
       subject: subject,
     );
   }
 
   // ============ BULK SYNC ============
+
   Future<Map<String, dynamic>> syncGrades({
     required int termId,
     required int weekNumber,
@@ -271,18 +335,18 @@ class ApiClient {
   }
 
   // ============ VOICE TRANSCRIBE ============
+
   Future<String> transcribeAudio(String filePath) async {
-    // Web platform لا تدعم dart:io File — أعد رسالة واضحة
+    // Web platform لا تدعم dart:io File
     if (kIsWeb) {
-      throw 'تحويل الصوت لنص عبر السيرفر غير متاح على متصفح الويب. '
-          'استخدم التطبيق على الجهاز المحمول للحصول على هذه الميزة.';
+      throw 'تحويل الصوت لنص عبر السيرفر غير متاح على متصفح الويب.\n'
+          'استخدم التطبيق على الهاتف للحصول على هذه الميزة.';
     }
 
     if (!File(filePath).existsSync()) {
       throw 'الملف الصوتي غير موجود';
     }
 
-    // يستخدم _withRetry مثل بقية الـ endpoints لإعادة المحاولة عند الأخطاء العابرة
     return _withRetry(() async {
       final form = FormData.fromMap({
         'audio': await MultipartFile.fromFile(
@@ -307,7 +371,8 @@ class ApiClient {
     });
   }
 
-  // ============ ERROR HANDLING ============
+  // ============ ERROR FORMATTING ============
+
   String _formatError(DioException e) {
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
@@ -329,6 +394,9 @@ class ApiClient {
       }
       return msg;
     }
+    if (code == 403) return 'ليس لديك صلاحية الوصول';
+    if (code == 404) return 'العنوان غير موجود على السيرفر';
+    if (code != null && code >= 500) return 'خطأ في السيرفر ($code)';
     if (data is Map) {
       return data['detail']?.toString() ??
           data['error']?.toString() ??

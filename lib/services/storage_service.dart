@@ -17,10 +17,17 @@ class StorageService {
   static int _cachedPendingCount = -1; // -1 = غير مُحدَّث بعد
 
   static Future<void> init() async {
-    await Hive.initFlutter();
-    await Hive.openBox(pendingBoxName);
-    await Hive.openBox(settingsBoxName);
-    await Hive.openBox(classroomCacheBox);
+    // لا نستدعي Hive.initFlutter() مرة ثانية — تمت في main.dart
+    // نفتح الصناديق فقط إذا لم تكن مفتوحة بالفعل
+    if (!Hive.isBoxOpen(pendingBoxName)) {
+      await Hive.openBox(pendingBoxName);
+    }
+    if (!Hive.isBoxOpen(settingsBoxName)) {
+      await Hive.openBox(settingsBoxName);
+    }
+    if (!Hive.isBoxOpen(classroomCacheBox)) {
+      await Hive.openBox(classroomCacheBox);
+    }
     // تهيئة الـ cache عند البدء
     _cachedPendingCount = getPendingSyncs().length;
   }

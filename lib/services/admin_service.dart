@@ -25,24 +25,55 @@ class AdminService {
 
   // ─────────────────── إدارة المستخدمين ───────────────────
 
+  // ═══════════════════════════════════════════════════════
+  // بيانات المطور الرسمية — م. باسل أشرف
+  // ═══════════════════════════════════════════════════════
+  static const String developerName     = 'م. باسل أشرف';
+  static const String developerUsername = 'basel';
+  static const String developerEmail    = 'baselashraf.bakry@gmail.com';
+  static const String developerPhone    = '01014543845';
+  static const String developerWhatsApp = 'https://wa.me/201014543845';
+  static const String appVersion        = '2.0.0';
+  static const String appName           = 'Study Grades Voice';
+  static const String appNameAr         = 'نظام رصد الدرجات الصوتي';
+  static const String copyrightYear     = '2026';
+
   /// تهيئة الحساب الافتراضي للمطور (يتم استدعاؤها عند البدء)
   static Future<void> initDefaultDeveloper() async {
     await ensureOpen();
     final box = Hive.box(_usersBox);
     if (box.isEmpty) {
-      // حساب المطور الافتراضي - باسل أشرف
+      // حساب المطور الرسمي - م. باسل أشرف
       final developer = User(
         id: 1,
-        username: 'basel',
-        email: 'basel.ashraf@studygrades.com',
+        username: developerUsername,
+        email: developerEmail,
         role: UserRole.developer,
-        fullName: 'م/ باسل أشرف',
-        phone: '',
+        fullName: developerName,
+        phone: developerPhone,
         isActive: true,
-        createdAt: DateTime.now(),
+        createdAt: DateTime(2026, 1, 1),
       );
       await _saveUserDirect(developer, password: 'Basel@2026');
-      await logActivity('تهيئة', 'تم إنشاء حساب المطور الافتراضي');
+      await logActivity('تهيئة النظام', 'تم تهيئة $appName v$appVersion بنجاح');
+    } else {
+      // تحديث بيانات المطور إذا تغيرت
+      final existingRaw = box.get('1') as String?;
+      if (existingRaw != null) {
+        try {
+          final existing = jsonDecode(existingRaw) as Map<String, dynamic>;
+          if (existing['email'] != developerEmail ||
+              existing['phone'] != developerPhone ||
+              existing['full_name'] != developerName) {
+            final updated = User.fromJson(existing).copyWith(
+              email: developerEmail,
+              phone: developerPhone,
+              fullName: developerName,
+            );
+            await _saveUserDirect(updated);
+          }
+        } catch (_) {}
+      }
     }
   }
 

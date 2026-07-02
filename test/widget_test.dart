@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/services/nlp_parser.dart';
+import 'package:study_grades_voice/services/nlp_parser.dart';
 
 void main() {
   group('NLPParser - Egyptian Dialect Numbers', () {

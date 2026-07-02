@@ -176,12 +176,12 @@ class _SplashScreenState extends State<SplashScreen>
                       child: Column(
                         children: [
                           Text(
-                            'StudyGrades 2026',
+                            'Study Grades Voice',
                             style: GoogleFonts.cairo(
-                              fontSize: 30,
+                              fontSize: 26,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              letterSpacing: 1.2,
+                              letterSpacing: 1.0,
                               shadows: [
                                 Shadow(
                                   color: Colors.black.withValues(alpha: 0.3),
@@ -234,7 +234,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'v1.0.0',
+                      'v2.0.0',
                       style: GoogleFonts.cairo(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.7),
@@ -242,7 +242,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '© 2026 — للمعلم باسل أشرف',
+                      '© 2026 — م. باسل أشرف | 01014543845',
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.6),

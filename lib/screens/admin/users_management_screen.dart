@@ -803,8 +803,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   Future<void> _confirmDelete(User user) async {
     // ============ Critical-action protection ============
     // Prevent accidental deletion of protected accounts.
-    if (user.role == 'developer' || user.username == 'developer') {
-      _showError('لا يمكن حذف حساب المطور (محمي)');
+    if (user.role == UserRole.developer ||
+        user.username == AdminService.developerUsername) {
+      _showError('لا يمكن حذف حساب المطور — محمي من الحذف');
       return;
     }
 
