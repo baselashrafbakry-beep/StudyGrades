@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/grading_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/upgrade_required_dialog.dart';
 import 'grading_screen.dart';
 
 class SubjectSelectionScreen extends StatefulWidget {
@@ -91,7 +92,37 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
     if (!mounted) return;
     Navigator.of(context).pop();
 
+    // فرض حد عدد الفصول (maxClassesPerTeacher): تم رفض فتح هذا الفصل
+    // لأنه فصل جديد يتجاوز حد الباقة الحالية.
+    if (grading.classLimitExceeded) {
+      await UpgradeRequiredDialog.show(
+        context,
+        featureNameAr: 'فتح فصول دراسية إضافية',
+        requiredPlanAr: 'أعلى',
+        icon: Icons.class_rounded,
+        customMessage:
+            'لقد وصلت للحد الأقصى لعدد الفصول الدراسية المسموح بها في'
+            ' باقتك الحالية.\nقم بالترقية لفتح فصول إضافية دون قيود.',
+      );
+      return;
+    }
+
     if (grading.classroom != null && grading.classroom!.students.isNotEmpty) {
+      // تنبيه غير حاجب عند قصّ قائمة الطلاب بسبب حد maxStudentsPerClass
+      if (grading.trimmedStudentsCount > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.warning,
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              'باقتك الحالية تدعم عدداً محدوداً من الطلاب — تم استبعاد '
+              '${grading.trimmedStudentsCount} طالب. قم بالترقية لعرض الكل.',
+              style: GoogleFonts.cairo(fontSize: 13),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => GradingScreen(

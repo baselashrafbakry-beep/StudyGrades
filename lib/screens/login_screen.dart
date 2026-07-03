@@ -9,6 +9,7 @@ import '../providers/grading_provider.dart';
 import '../services/admin_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
+import 'change_password_screen.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -137,10 +138,16 @@ class _LoginScreenState extends State<LoginScreen>
   /// تحويل رسالة خطأ API إلى نص عربي مفهوم للمستخدم
   String _humanizeError(String rawError) {
     final e = rawError.toLowerCase();
-    if (e.contains('connection') || e.contains('timeout') || e.contains('network') || e.contains('connectederror')) {
+    if (e.contains('connection') ||
+        e.contains('timeout') ||
+        e.contains('network') ||
+        e.contains('connectederror')) {
       return 'تعذر الاتصال بالسيرفر\nتحقق من الإنترنت أو جرّب الوضع التجريبي';
     }
-    if (e.contains('401') || e.contains('unauthorized') || e.contains('بيانات الدخول') || e.contains('غير صحيحة')) {
+    if (e.contains('401') ||
+        e.contains('unauthorized') ||
+        e.contains('بيانات الدخول') ||
+        e.contains('غير صحيحة')) {
       return 'اسم المستخدم أو كلمة المرور غير صحيحة';
     }
     if (e.contains('403') || e.contains('forbidden')) {
@@ -170,6 +177,22 @@ class _LoginScreenState extends State<LoginScreen>
     final ok = await auth.login(_userCtrl.text.trim(), _passCtrl.text);
     if (!mounted) return;
     if (ok) {
+      // 🔒 فحص علم "يجب تغيير كلمة المرور" — يُجبر المطوّر (أو أي حساب
+      // آخر يحمل هذا العلم) على تعيين كلمة مرور جديدة قبل المتابعة إذا
+      // كان لا يزال يستخدم كلمة المرور الافتراضية المكتوبة في الكود
+      // المصدري. راجع AdminService.initDefaultDeveloper() لمزيد من السياق.
+      final currentUser = auth.user;
+      final mustChange = currentUser != null &&
+          await AdminService.getMustChangePassword(currentUser.id);
+      if (!mounted) return;
+      if (mustChange) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const ChangePasswordScreen(isForced: true),
+          ),
+        );
+        return;
+      }
       Fluttertoast.showToast(
         msg: 'مرحباً ${_userCtrl.text.trim()}! تم تسجيل الدخول بنجاح ✅',
         backgroundColor: AppColors.success,
@@ -246,8 +269,8 @@ class _LoginScreenState extends State<LoginScreen>
                 _enterDemoMode();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: AppColors.info.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -469,8 +492,7 @@ class _LoginScreenState extends State<LoginScreen>
         labelStyle: GoogleFonts.cairo(),
         hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
       ),
-      validator: (v) =>
-          (v == null || v.isEmpty) ? 'أدخل كلمة المرور' : null,
+      validator: (v) => (v == null || v.isEmpty) ? 'أدخل كلمة المرور' : null,
       onFieldSubmitted: (_) => _handleLogin(),
     );
   }
@@ -720,8 +742,7 @@ class _LoginScreenState extends State<LoginScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.person_outline,
-                  size: 14, color: AppColors.textHint),
+              Icon(Icons.person_outline, size: 14, color: AppColors.textHint),
               const SizedBox(width: 4),
               Text(
                 '${AdminService.developerName} | v${AdminService.appVersion}',
@@ -876,8 +897,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _contactRow(
-      IconData icon, String label, String value, bool canCopy) {
+  Widget _contactRow(IconData icon, String label, String value, bool canCopy) {
     return GestureDetector(
       onTap: canCopy
           ? () {
@@ -922,8 +942,7 @@ class _LoginScreenState extends State<LoginScreen>
             ),
             const Spacer(),
             if (canCopy)
-              Icon(Icons.copy_rounded,
-                  size: 14, color: AppColors.textHint),
+              Icon(Icons.copy_rounded, size: 14, color: AppColors.textHint),
           ],
         ),
       ),

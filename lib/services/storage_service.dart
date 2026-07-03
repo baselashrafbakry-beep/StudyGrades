@@ -76,6 +76,20 @@ class StorageService {
     _cachedPendingCount = 0; // تحديث الـ cache
   }
 
+  /// يمسح كل البيانات المحلية المؤقتة: المزامنة المعلقة + كاش الفصول +
+  /// الإعدادات المحلية (auto_sync, haptic_feedback, use_server_speech...).
+  /// يُستخدم في "الإعدادات > مسح البيانات المخزنة" حيث يُعلَم المستخدم
+  /// صراحةً أن العملية ستحذف "الإعدادات المحلية" أيضاً وليس فقط المعلقات.
+  /// ملاحظة: لا يمسح صناديق الأدمن (admin_users_box/admin_settings_box/
+  /// admin_activity_box) ولا بيانات المصادقة (JWT tokens في SharedPreferences)
+  /// لتجنّب تسجيل خروج المستخدم أو فقدان صلاحيات الإدارة عن طريق الخطأ.
+  static Future<void> clearAllLocalData() async {
+    await _pendingBox.clear();
+    await _cacheBox.clear();
+    await _settingsBox.clear();
+    _cachedPendingCount = 0;
+  }
+
   /// Replace the entire pending list (used when partially syncing).
   static Future<void> replacePendingSyncs(List<PendingSync> list) async {
     if (list.isEmpty) {

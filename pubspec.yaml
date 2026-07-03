@@ -38,6 +38,7 @@ dependencies:
   # Security
   crypto: ^3.0.3
   pointycastle: ^3.9.1
+  android_id: 0.5.1
 
   # Utilities
   path_provider: ^2.1.5

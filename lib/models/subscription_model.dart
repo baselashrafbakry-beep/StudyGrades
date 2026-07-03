@@ -2,10 +2,10 @@
 // المطور: م. باسل أشرف
 
 enum SubscriptionPlan {
-  free,       // مجاني - محدود
-  basic,      // أساسي - شهري
-  pro,        // احترافي - شهري
-  school,     // مدرسة - سنوي
+  free, // مجاني - محدود
+  basic, // أساسي - شهري
+  pro, // احترافي - شهري
+  school, // مدرسة - سنوي
 }
 
 class SubscriptionPlanInfo {
@@ -14,8 +14,8 @@ class SubscriptionPlanInfo {
   final String nameEn;
   final String description;
   final double priceMonthly; // بالجنيه المصري
-  final double priceYearly;  // بالجنيه المصري
-  final int maxTeachers;     // -1 = غير محدود
+  final double priceYearly; // بالجنيه المصري
+  final int maxTeachers; // -1 = غير محدود
   final int maxStudentsPerClass;
   final int maxClassesPerTeacher;
   final bool voiceInput;
@@ -185,7 +185,8 @@ class UserSubscription {
       );
 
   bool get isPaid => plan != SubscriptionPlan.free;
-  bool get isExpired => expiryDate != null && DateTime.now().isAfter(expiryDate!);
+  bool get isExpired =>
+      expiryDate != null && DateTime.now().isAfter(expiryDate!);
   bool get isExpiringSoon => daysRemaining > 0 && daysRemaining <= 7;
 
   SubscriptionPlanInfo get planInfo => SubscriptionPlans.getPlan(plan);
@@ -207,9 +208,20 @@ class UserSubscription {
     final expiry = json['expiry_date'] != null
         ? DateTime.tryParse(json['expiry_date'].toString())
         : null;
-    // إصلاح: daysRemaining يجب أن يكون 0 عند الانتهاء وليس سالباً
+    // 🔴 عطل تم اكتشافه وإصلاحه هنا (daysRemaining Semantic Collision):
+    // كان الحد الأدنى للـ clamp هو -1 رغم أن هذا التعليق نفسه يوثّق نية
+    // مخالفة ("يجب أن يكون 0 وليس سالباً"). القيمة -1 محجوزة حصرياً في
+    // UserSubscription.free() للدلالة على "اشتراك مستمر بلا تاريخ انتهاء
+    // إطلاقاً". لو وصل هذا الفرع (expiry != null) بتاريخ انتهاء في
+    // الماضي (اشتراك مدفوع منتهي فعلياً)، كان clamp(-1, 9999) يُعيد -1
+    // أيضاً — أي نفس قيمة "الاستمرارية بلا نهاية"! أي كود مستقبلي يتحقق
+    // من daysRemaining == -1 مباشرة (بدل الاعتماد على isExpired/expiryDate)
+    // كان سيُفسِّر خطأً اشتراكاً مدفوعاً منتهياً منذ أيام على أنه "مجاني
+    // مستمر بلا حدود". الإصلاح: الحد الأدنى الصحيح لحالة "هناك تاريخ
+    // انتهاء محدَّد" هو 0 (منتهي/ينتهي اليوم)، وتبقى -1 محجوزة فقط لحالة
+    // "لا يوجد تاريخ انتهاء إطلاقاً" (expiry == null).
     final days = expiry != null
-        ? expiry.difference(DateTime.now()).inDays.clamp(-1, 9999)
+        ? expiry.difference(DateTime.now()).inDays.clamp(0, 9999)
         : -1;
     return UserSubscription(
       plan: plan,

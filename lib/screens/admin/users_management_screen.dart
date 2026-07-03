@@ -109,7 +109,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showUserDialog(null),
+        onPressed: () => _showUserDialog(currentUser),
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.person_add_rounded, color: Colors.white),
         label: Text(
@@ -461,28 +461,28 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       : Icons.check_circle_rounded,
                   label: user.isActive ? 'إيقاف' : 'تفعيل',
                   color: user.isActive ? AppColors.warning : AppColors.success,
-                  onTap: () => _toggleActive(user),
+                  onTap: () => _toggleActive(user, currentUser),
                 ),
                 const SizedBox(width: 6),
                 _actionBtn(
                   icon: Icons.lock_reset_rounded,
                   label: 'كلمة السر',
                   color: AppColors.info,
-                  onTap: () => _resetPasswordDialog(user),
+                  onTap: () => _resetPasswordDialog(user, currentUser),
                 ),
                 const SizedBox(width: 6),
                 _actionBtn(
                   icon: Icons.edit_rounded,
                   label: 'تعديل',
                   color: AppColors.primary,
-                  onTap: () => _showUserDialog(user),
+                  onTap: () => _showUserDialog(currentUser, existing: user),
                 ),
                 const SizedBox(width: 6),
                 _actionBtn(
                   icon: Icons.delete_rounded,
                   label: 'حذف',
                   color: AppColors.error,
-                  onTap: () => _confirmDelete(user),
+                  onTap: () => _confirmDelete(user, currentUser),
                 ),
               ] else ...[
                 Expanded(
@@ -565,13 +565,22 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
 
   // ─────────── Dialogs ───────────
 
-  Future<void> _showUserDialog(User? existing) async {
+  Future<void> _showUserDialog(User? currentUser, {User? existing}) async {
     final usernameCtrl = TextEditingController(text: existing?.username ?? '');
     final emailCtrl = TextEditingController(text: existing?.email ?? '');
     final fullNameCtrl = TextEditingController(text: existing?.fullName ?? '');
     final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
     final passwordCtrl = TextEditingController();
-    String selectedRole = existing?.role ?? UserRole.teacher;
+    // القائمة المسموح بها للأدوار: فقط الأدوار التي تقل رتبةً عن رتبة
+    // المستخدم الحالي (يمنع مثلاً "مدير" من إنشاء/ترقية حساب لرتبة
+    // "مدير" أو أعلى منها بنفس صلاحياته — دفاع في العمق، بالإضافة إلى
+    // التحقق الإلزامي المطابق في AdminService).
+    final currentLevel = UserRole.level(currentUser?.role ?? '');
+    final allowedRoles =
+        UserRole.all.where((r) => UserRole.level(r) < currentLevel).toList();
+    String selectedRole = (existing != null && allowedRoles.contains(existing.role))
+        ? existing.role
+        : (allowedRoles.isNotEmpty ? allowedRoles.last : UserRole.teacher);
     final formKey = GlobalKey<FormState>();
     final isEdit = existing != null;
 
@@ -649,7 +658,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
-                      items: UserRole.all
+                      items: allowedRoles
                           .map((r) => DropdownMenuItem(
                                 value: r,
                                 child: Row(
@@ -678,6 +687,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
               onPressed: () async {
                 if (!formKey.currentState!.validate()) return;
                 try {
+                  if (currentUser == null) {
+                    throw Exception('تعذر التحقق من هوية المستخدم الحالي');
+                  }
                   if (isEdit) {
                     final updated = existing.copyWith(
                       username: usernameCtrl.text.trim(),
@@ -686,13 +698,18 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       phone: phoneCtrl.text.trim(),
                       role: selectedRole,
                     );
-                    await AdminService.updateUser(updated);
+                    await AdminService.updateUser(
+                      updated,
+                      actorId: currentUser.id,
+                      actorRole: currentUser.role,
+                    );
                   } else {
                     await AdminService.createUser(
                       username: usernameCtrl.text.trim(),
                       password: passwordCtrl.text,
                       email: emailCtrl.text.trim(),
                       role: selectedRole,
+                      actorRole: currentUser.role,
                       fullName: fullNameCtrl.text.trim(),
                       phone: phoneCtrl.text.trim(),
                     );
@@ -736,15 +753,27 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     );
   }
 
-  Future<void> _toggleActive(User user) async {
-    await AdminService.toggleUserActive(user.id);
-    _showSuccess(
-      user.isActive ? 'تم إيقاف الحساب' : 'تم تفعيل الحساب',
-    );
-    _loadUsers();
+  Future<void> _toggleActive(User user, User? currentUser) async {
+    if (currentUser == null) {
+      _showError('تعذر التحقق من هوية المستخدم الحالي');
+      return;
+    }
+    try {
+      await AdminService.toggleUserActive(
+        user.id,
+        actorId: currentUser.id,
+        actorRole: currentUser.role,
+      );
+      _showSuccess(
+        user.isActive ? 'تم إيقاف الحساب' : 'تم تفعيل الحساب',
+      );
+      _loadUsers();
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    }
   }
 
-  Future<void> _resetPasswordDialog(User user) async {
+  Future<void> _resetPasswordDialog(User user, User? currentUser) async {
     final ctrl = TextEditingController();
     await showDialog(
       context: context,
@@ -788,9 +817,22 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                 _showError('كلمة المرور 4 أحرف على الأقل');
                 return;
               }
-              await AdminService.resetPassword(user.id, ctrl.text);
-              if (ctx.mounted) Navigator.pop(ctx);
-              _showSuccess('تم تغيير كلمة المرور');
+              if (currentUser == null) {
+                _showError('تعذر التحقق من هوية المستخدم الحالي');
+                return;
+              }
+              try {
+                await AdminService.resetPassword(
+                  user.id,
+                  ctrl.text,
+                  actorId: currentUser.id,
+                  actorRole: currentUser.role,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showSuccess('تم تغيير كلمة المرور');
+              } catch (e) {
+                _showError(e.toString().replaceAll('Exception: ', ''));
+              }
             },
             child: Text('تأكيد',
                 style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
@@ -800,7 +842,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     );
   }
 
-  Future<void> _confirmDelete(User user) async {
+  Future<void> _confirmDelete(User user, User? currentUser) async {
     // ============ Critical-action protection ============
     // Prevent accidental deletion of protected accounts.
     if (user.role == UserRole.developer ||
@@ -889,8 +931,17 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
+    if (currentUser == null) {
+      Navigator.pop(context); // close progress
+      _showError('تعذر التحقق من هوية المستخدم الحالي');
+      return;
+    }
     try {
-      await AdminService.deleteUser(user.id);
+      await AdminService.deleteUser(
+        user.id,
+        actorId: currentUser.id,
+        actorRole: currentUser.role,
+      );
       if (!mounted) return;
       Navigator.pop(context); // close progress
       _showSuccess('تم حذف الحساب');
@@ -898,7 +949,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // close progress
-      _showError('تعذر حذف الحساب: $e');
+      _showError('تعذر حذف الحساب: ${e.toString().replaceAll('Exception: ', '')}');
     }
   }
 }

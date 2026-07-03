@@ -15,6 +15,7 @@ import 'admin/admin_panel_screen.dart';
 import 'subscription_screen.dart';
 import 'about_screen.dart';
 import 'activate_subscription_screen.dart';
+import 'change_password_screen.dart';
 
 /// شاشة الإعدادات والتخصيصات
 class SettingsScreen extends StatefulWidget {
@@ -94,6 +95,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 80),
                 children: [
                   _buildProfileCard(auth),
+                  const SizedBox(height: 16),
+                  _sectionTitle('الحساب', Icons.account_circle_rounded),
+                  _settingTile(
+                    icon: Icons.password_rounded,
+                    iconColor: AppColors.primary,
+                    title: 'تغيير كلمة المرور',
+                    subtitle: 'تعيين كلمة مرور جديدة لحسابك',
+                    trailing: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppColors.textHint,
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ChangePasswordScreen(),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   _sectionTitle('عام', Icons.tune_rounded),
                   _settingTile(
@@ -232,8 +252,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   if (auth.user?.canAccessAdminPanel ?? false) ...[
                     const SizedBox(height: 16),
-                    _sectionTitle(
-                        'لوحة تحكم المطوّر', Icons.admin_panel_settings_rounded),
+                    _sectionTitle('لوحة تحكم المطوّر',
+                        Icons.admin_panel_settings_rounded),
                     _buildAdminPanelTile(),
                   ],
                   const SizedBox(height: 16),
@@ -272,7 +292,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.info_rounded,
                     iconColor: AppColors.primary,
                     title: 'إصدار التطبيق',
-                    subtitle: '${AdminService.appNameAr} v${AdminService.appVersion}',
+                    subtitle:
+                        '${AdminService.appNameAr} v${AdminService.appVersion}',
                   ),
                   _settingTile(
                     icon: Icons.person_rounded,
@@ -291,8 +312,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     trailing: Icon(Icons.copy_rounded,
                         size: 16, color: AppColors.textHint),
                     onTap: () {
-                      Clipboard.setData(
-                          const ClipboardData(text: AdminService.developerPhone));
+                      Clipboard.setData(const ClipboardData(
+                          text: AdminService.developerPhone));
                       Fluttertoast.showToast(
                         msg: 'تم نسخ رقم الواتساب',
                         backgroundColor: AppColors.success,
@@ -308,8 +329,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     trailing: Icon(Icons.copy_rounded,
                         size: 16, color: AppColors.textHint),
                     onTap: () {
-                      Clipboard.setData(
-                          const ClipboardData(text: AdminService.developerEmail));
+                      Clipboard.setData(const ClipboardData(
+                          text: AdminService.developerEmail));
                       Fluttertoast.showToast(
                         msg: 'تم نسخ البريد الإلكتروني',
                         backgroundColor: AppColors.success,
@@ -489,9 +510,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  user?.email.isNotEmpty ?? false
-                      ? user!.email
-                      : 'حساب معلم',
+                  user?.email.isNotEmpty ?? false ? user!.email : 'حساب معلم',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     color: Colors.white.withValues(alpha: 0.85),
@@ -873,7 +892,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             if (selected)
-              const Icon(Icons.check_circle, color: AppColors.success, size: 20),
+              const Icon(Icons.check_circle,
+                  color: AppColors.success, size: 20),
           ],
         ),
       ),
@@ -933,19 +953,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // دوال مساعدة لعرض الدور بشكل صحيح لجميع الأدوار الأربعة
   String _roleLabel(String? role) {
     switch (role) {
-      case 'developer': return 'مطوّر';
-      case 'admin':     return 'مدير';
-      case 'manager':   return 'مشرف';
-      default:          return 'معلم';
+      case 'developer':
+        return 'مطوّر';
+      case 'admin':
+        return 'مدير';
+      case 'manager':
+        return 'مشرف';
+      default:
+        return 'معلم';
     }
   }
 
   String _roleIcon(String? role) {
     switch (role) {
-      case 'developer': return '👨‍💻';
-      case 'admin':     return '🛡️';
-      case 'manager':   return '🎓';
-      default:          return '📚';
+      case 'developer':
+        return '👨‍💻';
+      case 'admin':
+        return '🛡️';
+      case 'manager':
+        return '🎓';
+      default:
+        return '📚';
     }
   }
 
@@ -1043,8 +1071,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
 
     try {
-      await StorageService.clearPendingSyncs();
+      await StorageService.clearAllLocalData();
       if (!mounted) return;
+      // إعادة تحميل الإعدادات لتعكس القيم الافتراضية بعد المسح
+      await _loadSettings();
+      if (!mounted) return;
+      // مزامنة عدّاد المعلقات في GradingProvider مع القيمة الفعلية (أصبحت 0)
+      context.read<GradingProvider>().refreshPendingCount();
       Fluttertoast.showToast(
         msg: 'تم مسح البيانات المخزنة',
         backgroundColor: AppColors.success,
@@ -1196,12 +1229,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(ctx);
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => const SubscriptionScreen()),
+                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
               );
             },
-            child:
-                Text('الاشتراكات', style: GoogleFonts.cairo()),
+            child: Text('الاشتراكات', style: GoogleFonts.cairo()),
           ),
         ],
       ),

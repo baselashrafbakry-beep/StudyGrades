@@ -10,9 +10,11 @@ import '../services/api_client.dart';
 import '../services/voice_service.dart';
 import '../services/nlp_parser.dart';
 import '../services/analytics_service.dart';
+import '../services/subscription_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/recording_button.dart';
 import '../widgets/grade_field_card.dart';
+import '../widgets/upgrade_required_dialog.dart';
 import 'students_list_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -765,11 +767,48 @@ class _GradingScreenState extends State<GradingScreen> {
     _toast('الطالب التالي');
   }
 
+  /// فتح لوحة التحليلات (Dashboard) مع فرض التحقق من الاشتراك أولاً —
+  /// هذه الميزة غير متاحة لباقة "مجاني"، وتتطلب باقة أساسي فأعلى.
+  Future<void> _openDashboard() async {
+    final allowed = await SubscriptionService.hasFeature('analytics');
+    if (!mounted) return;
+    if (!allowed) {
+      await UpgradeRequiredDialog.show(
+        context,
+        featureNameAr: 'لوحة التحليلات',
+        requiredPlanAr: 'أساسي',
+        icon: Icons.analytics_rounded,
+      );
+      return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DashboardScreen(
+          className: widget.className,
+          subject: widget.subject,
+        ),
+      ),
+    );
+  }
+
   Future<void> _exportExcel() async {
     final grading = context.read<GradingProvider>();
     final auth = context.read<AuthProvider>();
     if (grading.students.isEmpty) {
       _toast('لا يوجد طلاب للتصدير', error: true);
+      return;
+    }
+    // فرض الاشتراك: تصدير Excel متاح فقط لباقتَي "احترافي" و"مدرسة"
+    final allowed = await SubscriptionService.hasFeature('export_excel');
+    if (!mounted) return;
+    if (!allowed) {
+      await UpgradeRequiredDialog.show(
+        context,
+        featureNameAr: 'تصدير Excel',
+        requiredPlanAr: 'احترافي',
+        icon: Icons.table_chart_rounded,
+      );
       return;
     }
     if (_autoLoopActive) await _stopAutoLoop(silent: true);
@@ -921,14 +960,7 @@ class _GradingScreenState extends State<GradingScreen> {
                           children: [
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => DashboardScreen(
-                                      className: widget.className,
-                                      subject: widget.subject,
-                                    ),
-                                  ),
-                                ),
+                                onPressed: _openDashboard,
                                 icon: const Icon(Icons.analytics_rounded,
                                     size: 18),
                                 label: Text(
@@ -1071,14 +1103,7 @@ class _GradingScreenState extends State<GradingScreen> {
                 icon: const Icon(Icons.help_outline, color: Colors.white),
               ),
               IconButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => DashboardScreen(
-                      className: widget.className,
-                      subject: widget.subject,
-                    ),
-                  ),
-                ),
+                onPressed: _openDashboard,
                 tooltip: 'لوحة التحليلات',
                 icon: const Icon(
                   Icons.analytics_rounded,

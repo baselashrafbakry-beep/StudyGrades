@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:android_id/android_id.dart';
 import '../models/subscription_model.dart';
 import '../utils/error_handler.dart';
 import '../security/rsa_license_verifier.dart';
@@ -96,21 +98,68 @@ class SubscriptionService {
 
   // ======================================================================
   // معرّف الجهاز الفريد (Device License ID)
-  // يُولَّد مرة واحدة فقط ويُخزَّن محلياً، ويُستخدَم كأساس لربط أكواد
-  // الاشتراك المدفوعة بجهاز واحد فقط.
+  // يُستخدَم كأساس لربط أكواد الاشتراك المدفوعة بجهاز واحد فقط.
+  //
+  // 🔴 ثغرة/عطل جسيم تم اكتشافه وإصلاحه هنا (Device-ID Reinstall Bug):
+  // النسخة السابقة كانت تولّد معرّفاً عشوائياً بالكامل (Random.secure())
+  // وتخزّنه فقط في SharedPreferences. هذا التخزين يُمسح بالكامل عند حذف
+  // التطبيق وإعادة تثبيته (أو مسح بيانات التطبيق) على أندرويد. النتيجة:
+  //   1) أي **عميل دافع حقيقي** اشترى كوداً مخصصاً لجهازه (SGV2-...) كان
+  //      سيفقد صلاحية اشتراكه المدفوع بالكامل بمجرد إعادة تثبيت التطبيق
+  //      أو تغيير هاتفه — لأن معرّف الجهاز الجديد لن يطابق المعرّف الذي
+  //      وُلِّد الكود بناءً عليه، رغم أنه نفس الجهاز فعلياً.
+  //   2) بالمقابل، كان بإمكان أي مستخدم إساءة استخدام كود التجربة المجانية
+  //      (GRADER-PRO-TRIAL) عدة مرات لا نهائياً عبر حذف التطبيق وإعادة
+  //      تثبيته في كل مرة (كل تثبيت يولّد معرّفاً عشوائياً جديداً، وبالتالي
+  //      "جهازاً جديداً" وهمياً من منظور نظام تتبع الأكواد المُستخدَمة).
+  //
+  // ✅ الإصلاح: استخدام Android's Settings.Secure.ANDROID_ID (عبر حزمة
+  // android_id) كمصدر أساسي للمعرّف على أندرويد. هذا المعرّف **يبقى ثابتاً
+  // عبر إعادة التثبيت وحذف بيانات التطبيق**، ولا يتغير إلا بإعادة ضبط
+  // المصنع الكامل للجهاز أو تغيير مفتاح توقيع التطبيق (APK signing key) —
+  // وهذا بالضبط السلوك الصحيح تجارياً وأمنياً لكل من: حماية اشتراكات
+  // العملاء الحقيقيين من الفقدان العرضي، وتقليل مساحة إساءة استخدام
+  // الأكواد الترويجية عبر إعادة التثبيت.
+  //
+  // للتوافق الخلفي الكامل مع أي تثبيت حالي بالفعل (Backward Compatibility):
+  // إذا وُجد معرّف مخزَّن مسبقاً في SharedPreferences (من نسخة سابقة من
+  // التطبيق، أو من هذه النسخة نفسها بعد أول تشغيل)، يُستخدَم كما هو دون
+  // أي تغيير — حتى لا تنكسر أي اشتراكات مفعَّلة بالفعل على النظام القديم.
+  // فقط عند عدم وجود أي معرّف مخزَّن (تثبيت جديد تماماً، أو أول مرة تشغيل
+  // بعد هذا التحديث) يُستخدَم ANDROID_ID الثابت كأساس، مع تخزينه فوراً حتى
+  // لا يُعاد الاستعلام عنه في كل مرة.
   // ======================================================================
+  static const AndroidId _androidIdPlugin = AndroidId();
+
   static Future<String> getDeviceId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       var id = prefs.getString(_deviceIdKey);
-      if (id == null || id.isEmpty) {
-        id = _generateRandomDeviceId();
-        await prefs.setString(_deviceIdKey, id);
+      if (id != null && id.isNotEmpty) {
+        // توافق خلفي: معرّف مخزَّن بالفعل (من هذا التشغيل أو نسخة سابقة)
+        return id;
       }
+
+      // لا يوجد معرّف مخزَّن → حاول أولاً الحصول على ANDROID_ID الثابت
+      // (متاح فقط على أندرويد؛ يُعيد null على الويب/iOS تلقائياً)
+      String? stableId;
+      if (!kIsWeb) {
+        try {
+          stableId = await _androidIdPlugin.getId();
+        } catch (e, st) {
+          ErrorHandler.logError(e, st, 'SubscriptionService.getDeviceId.androidId');
+        }
+      }
+
+      id = (stableId != null && stableId.isNotEmpty)
+          ? stableId.toUpperCase()
+          : _generateRandomDeviceId(); // fallback: ويب/iOS أو فشل المكوّن
+
+      await prefs.setString(_deviceIdKey, id);
       return id;
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'SubscriptionService.getDeviceId');
-      // معرّف احتياطي مؤقت في حال فشل التخزين (لن يُحفظ)
+      // معرّف احتياطي مؤقت في حال فشل التخزين بالكامل (لن يُحفظ)
       return _generateRandomDeviceId();
     }
   }
@@ -341,6 +390,74 @@ class SubscriptionService {
   // ======================================================================
   static Future<void> cancelSubscription() async {
     await _saveSubscription(UserSubscription.free());
+  }
+
+  // ======================================================================
+  // فرض حدود الخطة: عدد الفصول الدراسية المختلفة لكل معلم
+  // (maxClassesPerTeacher) — كانت هذه القيمة تُعرَض فقط كرقم تسويقي في
+  // شاشة الأسعار دون أي فرض فعلي؛ الآن تُطبَّق فعلياً هنا.
+  // ======================================================================
+  static const _openedClassesKey = 'opened_class_ids';
+
+  /// يتحقق مما إذا كان بإمكان المعلم فتح فصل دراسي معيّن الآن، بحسب حد
+  /// "عدد الفصول" في باقته الحالية:
+  ///  - فصل العرض التجريبي (classId == 0) مستثنى دائماً.
+  ///  - أي فصل سبق فتحه فعلياً (مسجَّل محلياً) يبقى متاحاً دوماً — الحد
+  ///    يُطبَّق فقط على عدد الفصول *المختلفة* الجديدة.
+  ///  - baقة بحد غير محدود (-1) تتجاوز الفحص دائماً.
+  static Future<bool> canOpenClass(int classId) async {
+    if (classId == 0) return true;
+    final sub = await getCurrentSubscription();
+    final maxClasses = sub.planInfo.maxClassesPerTeacher;
+    if (maxClasses == -1) return true;
+    final opened = await _getOpenedClassIds();
+    if (opened.contains(classId)) return true;
+    return opened.length < maxClasses;
+  }
+
+  /// يسجّل أن هذا الفصل تم فتحه فعلياً بنجاح (يُستدعى بعد تحميل بيانات
+  /// الفصل بنجاح فقط، وليس عند مجرد محاولة الفتح).
+  static Future<void> markClassOpened(int classId) async {
+    if (classId == 0) return;
+    try {
+      final opened = await _getOpenedClassIds();
+      if (opened.contains(classId)) return;
+      opened.add(classId);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _openedClassesKey,
+        opened.map((e) => e.toString()).toList(),
+      );
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SubscriptionService.markClassOpened');
+    }
+  }
+
+  static Future<Set<int>> _getOpenedClassIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_openedClassesKey) ?? const [];
+      return raw
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toSet();
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SubscriptionService._getOpenedClassIds');
+      return {};
+    }
+  }
+
+  /// عدد الفصول الدراسية الفريدة المفتوحة فعلياً حتى الآن (بدون العرض
+  /// التجريبي) — مفيد لعرض "2 من 2 فصول" في واجهة المستخدم مثلاً.
+  static Future<int> getOpenedClassesCount() async {
+    return (await _getOpenedClassIds()).length;
+  }
+
+  /// الحد الأقصى لعدد الطلاب بالفصل الواحد بحسب باقة الاشتراك الحالية.
+  /// -1 تعني غير محدود.
+  static Future<int> getMaxStudentsPerClass() async {
+    final sub = await getCurrentSubscription();
+    return sub.planInfo.maxStudentsPerClass;
   }
 
   // ======================================================================

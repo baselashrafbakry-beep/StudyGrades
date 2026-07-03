@@ -30,18 +30,19 @@ class AdminService {
   // ═══════════════════════════════════════════════════════
   // بيانات المطور الرسمية — م. باسل أشرف
   // ═══════════════════════════════════════════════════════
-  static const String developerName     = 'م. باسل أشرف';
+  static const String developerName = 'م. باسل أشرف';
   static const String developerUsername = 'basel';
-  static const String developerEmail    = 'baselashraf.bakry@gmail.com';
-  static const String developerPhone    = '01014543845';
+  static const String developerEmail = 'baselashraf.bakry@gmail.com';
+  static const String developerPhone = '01014543845';
   static const String developerWhatsApp = 'https://wa.me/201014543845';
-  static const String appVersion        = '2.0.0';
-  static const String appName           = 'Study Grades Voice';
-  static const String appNameAr         = 'نظام رصد الدرجات الصوتي';
-  static const String copyrightYear     = '2026';
-  static const String packageName       = 'com.myapp.mobile';
-  static const String serverUrl         = 'studygrades2026.pythonanywhere.com';
-  static const String serverUrlFull     = 'https://studygrades2026.pythonanywhere.com';
+  static const String appVersion = '2.0.0';
+  static const String appName = 'Study Grades Voice';
+  static const String appNameAr = 'نظام رصد الدرجات الصوتي';
+  static const String copyrightYear = '2026';
+  static const String packageName = 'com.myapp.mobile';
+  static const String serverUrl = 'studygrades2026.pythonanywhere.com';
+  static const String serverUrlFull =
+      'https://studygrades2026.pythonanywhere.com';
 
   /// تهيئة الحساب الافتراضي للمطور (يتم استدعاؤها عند البدء)
   static Future<void> initDefaultDeveloper() async {
@@ -59,11 +60,19 @@ class AdminService {
         isActive: true,
         createdAt: DateTime(2026, 1, 1),
       );
-      // ملاحظة أمنية: يُنصح بشدة بتغيير كلمة المرور الافتراضية فور أول
-      // دخول عبر شاشة "إدارة المستخدمين" → "إعادة تعيين كلمة المرور"،
-      // لأن كلمات المرور الافتراضية المكتوبة في الكود المصدري قد تكون
-      // قابلة للاستخلاص من ملف APK المُفكَّك في حالات نادرة.
+      // 🔴 ثغرة أمنية تم اكتشافها وإصلاحها هنا (Hardcoded Default Password):
+      // كلمة مرور المطوّر الافتراضية 'Basel@2026' مكتوبة في الكود المصدري،
+      // وقابلة نظرياً للاستخلاص من ملف APK المُفكَّك. المشكلة الأخطر
+      // المكتشَفة أثناء المراجعة: دالة resetPassword() كانت تمنع صراحةً
+      // المستخدم من تغيير كلمة مروره الخاصة (actorId == userId) وتُحيله
+      // إلى "شاشة الملف الشخصي" — وهي شاشة غير موجودة إطلاقاً في التطبيق!
+      // بمعنى أن حساب المطوّر لم يكن يملك أي وسيلة فعلية لتغيير كلمة
+      // مروره الافتراضية عبر الواجهة. الإصلاح: تمت إضافة آلية كاملة
+      // للتغيير الذاتي (changeOwnPassword) + علم "يجب تغيير كلمة المرور"
+      // (mustChangePassword) يُفعَّل هنا تلقائياً ليُجبر المطوّر على تعيين
+      // كلمة مرور جديدة فور أول تسجيل دخول (راجع login_screen.dart).
       await _saveUserDirect(developer, password: 'Basel@2026');
+      await _setMustChangePassword(developer.id, true);
       await logActivity('تهيئة النظام', 'تم تهيئة $appName v$appVersion بنجاح');
     } else {
       // تحديث بيانات المطور إذا تغيرت
@@ -103,23 +112,74 @@ class AdminService {
   }
 
   /// حفظ مستخدم مع كلمة المرور (SHA-256 + Salt عشوائي فريد لكل مستخدم)
-  static Future<void> _saveUserDirect(User user, {String? password}) async {
+  ///
+  /// ملاحظة: حقل `must_change_password` (علم "يجب تغيير كلمة المرور")
+  /// يُحفَظ خارج نموذج User.toJson() العادي، لذا يجب الحفاظ عليه صراحةً
+  /// من البيانات الموجودة مسبقاً في كل مرة يُستدعى فيها هذا التابع، وإلا
+  /// سيُفقَد العلم عند أي تعديل آخر على المستخدم (تفعيل/تعطيل/تعديل بيانات).
+  static Future<void> _saveUserDirect(
+    User user, {
+    String? password,
+    bool? mustChangePassword,
+  }) async {
     final box = Hive.box(_usersBox);
     final data = user.toJson();
+    final existingRaw = box.get(user.id.toString());
+    Map<String, dynamic>? existing;
+    if (existingRaw != null) {
+      try {
+        existing = jsonDecode(existingRaw as String) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
     if (password != null) {
       final salt = _generateSalt();
       data['password_salt'] = salt;
       data['password_hash'] = _hashPassword(password, salt);
-    } else {
+    } else if (existing != null) {
       // إن لم تُمرر كلمة مرور، احتفظ بالقديمة إن وُجدت (hash + salt)
-      final existing = box.get(user.id.toString());
-      if (existing != null) {
-        final prev = jsonDecode(existing as String) as Map<String, dynamic>;
-        data['password_hash'] = prev['password_hash'];
-        data['password_salt'] = prev['password_salt'];
-      }
+      data['password_hash'] = existing['password_hash'];
+      data['password_salt'] = existing['password_salt'];
     }
+
+    // الحفاظ على علم "يجب تغيير كلمة المرور" ما لم يُطلب تغييره صراحةً
+    if (mustChangePassword != null) {
+      data['must_change_password'] = mustChangePassword;
+    } else if (existing != null && existing['must_change_password'] != null) {
+      data['must_change_password'] = existing['must_change_password'];
+    }
+
     await box.put(user.id.toString(), jsonEncode(data));
+  }
+
+  /// تفعيل/إلغاء علم "يجب تغيير كلمة المرور" لمستخدم معيّن دون التأثير
+  /// على أي بيانات أخرى للمستخدم.
+  static Future<void> _setMustChangePassword(int userId, bool value) async {
+    final box = Hive.box(_usersBox);
+    final raw = box.get(userId.toString());
+    if (raw == null) return;
+    try {
+      final data = jsonDecode(raw as String) as Map<String, dynamic>;
+      data['must_change_password'] = value;
+      await box.put(userId.toString(), jsonEncode(data));
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'AdminService._setMustChangePassword');
+    }
+  }
+
+  /// هل يجب على هذا المستخدم تغيير كلمة مروره قبل المتابعة؟
+  /// (يُستخدَم لإجبار المطوّر على تغيير كلمة المرور الافتراضية عند أول دخول)
+  static Future<bool> getMustChangePassword(int userId) async {
+    await ensureOpen();
+    final box = Hive.box(_usersBox);
+    final raw = box.get(userId.toString());
+    if (raw == null) return false;
+    try {
+      final data = jsonDecode(raw as String) as Map<String, dynamic>;
+      return data['must_change_password'] == true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// جلب جميع المستخدمين
@@ -141,16 +201,53 @@ class AdminService {
     return users;
   }
 
+  // ═══════════════════════════════════════════════════════
+  // فرض الصلاحيات على مستوى الخدمة (Defense in Depth)
+  // ═══════════════════════════════════════════════════════
+  // ⚠️ ملاحظة أمنية هامة: قبل هذا التحديث كانت دوال إدارة المستخدمين
+  // (createUser/updateUser/deleteUser/toggleUserActive/resetPassword)
+  // تُنفَّذ دون أي تحقق من صلاحية الطرف المستدعي (Caller) على مستوى
+  // الخدمة نفسها — الاعتماد كان بالكامل على أن واجهة المستخدم
+  // (users_management_screen.dart) تُخفي الأزرار عبر `canModifyUser()`.
+  // هذا يعني أن أي مسار برمجي آخر يستدعي هذه الدوال مباشرة (حالياً أو
+  // مستقبلاً) كان يمكنه تجاوز التحقق تماماً، بما في ذلك احتمال إنشاء/
+  // ترقية حساب لرتبة "مطوّر" من واجهة إدارة المستخدمين نفسها (كانت
+  // القائمة المنسدلة للأدوار تعرض كل الأدوار دون قيد). الآن كل دالة
+  // تفرض التحقق من الهرمية إلزامياً بغضّ النظر عن استدعاء الواجهة.
+
+  /// يتحقق أن الدور المرسِل (actorRole) يملك أصلاً صلاحية إدارة
+  /// المستخدمين (مطوّر أو مدير فقط) — مطابق لـ User.canManageUsers.
+  static void _ensureCanManageUsers(String actorRole) {
+    if (UserRole.level(actorRole) < UserRole.level(UserRole.admin)) {
+      throw Exception('لا تملك صلاحية إدارة المستخدمين');
+    }
+  }
+
+  /// يتحقق أن actorRole يفوق targetRole في التسلسل الهرمي، أي لا يمكن
+  /// لمستخدم إنشاء/تعديل/حذف/تجميد حساب بنفس رتبته أو أعلى منها
+  /// (مطابق لـ User.canModifyUser، لكن مُطبَّق قسرياً هنا على الخدمة).
+  static void _ensureOutranks(String actorRole, String targetRole) {
+    if (UserRole.level(actorRole) <= UserRole.level(targetRole)) {
+      throw Exception('لا تملك صلاحية كافية لتنفيذ هذا الإجراء على هذا الحساب');
+    }
+  }
+
   /// إنشاء مستخدم جديد
   static Future<User> createUser({
     required String username,
     required String password,
     required String email,
     required String role,
+    required String actorRole,
     String fullName = '',
     String? phone,
   }) async {
     await ensureOpen();
+    _ensureCanManageUsers(actorRole);
+    // لا يمكن إنشاء حساب برتبة مساوية أو أعلى من رتبة المُنشِئ نفسه
+    // (يمنع مثلاً مديراً من إنشاء حساب "مطوّر" أو "مدير" آخر بصلاحياته).
+    _ensureOutranks(actorRole, role);
+
     final users = await getAllUsers();
 
     // التحقق من عدم تكرار اسم المستخدم
@@ -162,8 +259,9 @@ class AdminService {
       throw Exception('البريد الإلكتروني مستخدم بالفعل');
     }
 
-    final newId =
-        users.isEmpty ? 2 : (users.map((u) => u.id).reduce((a, b) => a > b ? a : b) + 1);
+    final newId = users.isEmpty
+        ? 2
+        : (users.map((u) => u.id).reduce((a, b) => a > b ? a : b) + 1);
 
     final user = User(
       id: newId,
@@ -188,8 +286,24 @@ class AdminService {
   static Future<User> updateUser(
     User user, {
     String? newPassword,
+    required int actorId,
+    required String actorRole,
   }) async {
     await ensureOpen();
+    _ensureCanManageUsers(actorRole);
+    if (actorId == user.id) {
+      throw Exception('لا يمكنك تعديل حسابك الخاص من هذه الشاشة');
+    }
+    final existing = await getUserById(user.id);
+    if (existing == null) {
+      throw Exception('المستخدم غير موجود');
+    }
+    // يجب أن يفوق المُعدِّل رتبة الحساب الحالية للمستهدف...
+    _ensureOutranks(actorRole, existing.role);
+    // ...ويجب أن يفوق أيضاً الرتبة الجديدة المطلوب تعيينها (يمنع تصعيد
+    // الصلاحيات عبر تغيير دور المستخدم إلى رتبة مساوية/أعلى من المُعدِّل).
+    _ensureOutranks(actorRole, user.role);
+
     await _saveUserDirect(user, password: newPassword);
     await logActivity(
       'تعديل حساب',
@@ -199,23 +313,49 @@ class AdminService {
   }
 
   /// حذف مستخدم
-  static Future<void> deleteUser(int userId) async {
+  static Future<void> deleteUser(
+    int userId, {
+    required int actorId,
+    required String actorRole,
+  }) async {
     await ensureOpen();
-    final box = Hive.box(_usersBox);
-    final user = await getUserById(userId);
-    await box.delete(userId.toString());
-    if (user != null) {
-      await logActivity(
-        'حذف حساب',
-        'تم حذف الحساب: ${user.username}',
-      );
+    _ensureCanManageUsers(actorRole);
+    if (actorId == userId) {
+      throw Exception('لا يمكنك حذف حسابك الخاص');
     }
+    final user = await getUserById(userId);
+    if (user == null) return;
+    // حماية صريحة على مستوى الخدمة لحساب المطوّر (بالإضافة للحماية
+    // الطبيعية عبر الهرمية، لأن مستوى "مطوّر" هو الأعلى ولا يمكن لأي
+    // طرف آخر تجاوزه أصلاً، لكن هذا تحقق صريح إضافي دفاعاً في العمق).
+    if (user.role == UserRole.developer || user.username == developerUsername) {
+      throw Exception('لا يمكن حذف حساب المطوّر — محمي من الحذف');
+    }
+    _ensureOutranks(actorRole, user.role);
+
+    final box = Hive.box(_usersBox);
+    await box.delete(userId.toString());
+    await logActivity(
+      'حذف حساب',
+      'تم حذف الحساب: ${user.username}',
+    );
   }
 
   /// تفعيل/تعطيل حساب
-  static Future<void> toggleUserActive(int userId) async {
+  static Future<void> toggleUserActive(
+    int userId, {
+    required int actorId,
+    required String actorRole,
+  }) async {
+    await ensureOpen();
+    _ensureCanManageUsers(actorRole);
+    if (actorId == userId) {
+      throw Exception('لا يمكنك تجميد/تفعيل حسابك الخاص');
+    }
     final user = await getUserById(userId);
     if (user == null) return;
+    _ensureOutranks(actorRole, user.role);
+
     final updated = user.copyWith(isActive: !user.isActive);
     await _saveUserDirect(updated);
     await logActivity(
@@ -224,14 +364,83 @@ class AdminService {
     );
   }
 
-  /// إعادة تعيين كلمة المرور
-  static Future<void> resetPassword(int userId, String newPassword) async {
+  /// إعادة تعيين كلمة مرور مستخدم *آخر* (إجراء إداري، لا يتطلب معرفة
+  /// كلمة المرور الحالية للمستهدف — يُستخدَم من "إدارة المستخدمين").
+  ///
+  /// لتغيير المستخدم لكلمة مروره *الخاصة* استخدم [changeOwnPassword] بدلاً
+  /// من هذا التابع (يتطلب التحقق من كلمة المرور الحالية أولاً).
+  static Future<void> resetPassword(
+    int userId,
+    String newPassword, {
+    required int actorId,
+    required String actorRole,
+  }) async {
+    await ensureOpen();
+    _ensureCanManageUsers(actorRole);
+    if (actorId == userId) {
+      throw Exception(
+          'لتغيير كلمة مرورك الخاصة استخدم "الإعدادات" ← "تغيير كلمة المرور"');
+    }
     final user = await getUserById(userId);
     if (user == null) return;
-    await _saveUserDirect(user, password: newPassword);
+    _ensureOutranks(actorRole, user.role);
+
+    await _saveUserDirect(user,
+        password: newPassword, mustChangePassword: false);
     await logActivity(
       'تغيير كلمة المرور',
       'تم تغيير كلمة المرور لـ: ${user.username}',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 🔐 التغيير الذاتي لكلمة المرور (Self-Service Password Change)
+  // ═══════════════════════════════════════════════════════
+  // أُضيف هذا التابع لسدّ ثغرة/عطل مكتشَف: resetPassword() كانت تمنع
+  // المستخدم من تغيير كلمة مروره الخاصة وتُحيله إلى "شاشة ملف شخصي"
+  // غير موجودة في التطبيق. هذا التابع يوفر المسار البديل الصحيح، مع
+  // اشتراط أمني إضافي (لا يتوفر في resetPassword الإداري): يجب إثبات
+  // معرفة كلمة المرور *الحالية* قبل قبول كلمة المرور الجديدة، تماماً
+  // كما هو معمول به في كل تطبيقات "تغيير كلمة المرور الذاتي" الاحترافية.
+  static Future<void> changeOwnPassword({
+    required int userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await ensureOpen();
+    if (newPassword.length < 6) {
+      throw Exception('كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف');
+    }
+    final box = Hive.box(_usersBox);
+    final raw = box.get(userId.toString());
+    if (raw == null) {
+      throw Exception('المستخدم غير موجود');
+    }
+    final data = jsonDecode(raw as String) as Map<String, dynamic>;
+    final user = User.fromJson(data);
+
+    // التحقق من كلمة المرور الحالية (يدعم الصيغة الجديدة SHA-256+Salt
+    // والصيغة القديمة base64 معاً، مطابقاً لمنطق verifyCredentials).
+    final dbHash = data['password_hash']?.toString() ?? '';
+    final dbSalt = data['password_salt']?.toString();
+    bool matched;
+    if (dbSalt != null && dbSalt.isNotEmpty) {
+      matched = _hashPassword(currentPassword, dbSalt) == dbHash;
+    } else {
+      matched = dbHash == base64Encode(utf8.encode(currentPassword));
+    }
+    if (!matched) {
+      throw Exception('كلمة المرور الحالية غير صحيحة');
+    }
+    if (currentPassword == newPassword) {
+      throw Exception('كلمة المرور الجديدة يجب أن تختلف عن الحالية');
+    }
+
+    await _saveUserDirect(user,
+        password: newPassword, mustChangePassword: false);
+    await logActivity(
+      'تغيير كلمة المرور',
+      'قام ${user.username} بتغيير كلمة مروره الخاصة',
     );
   }
 
@@ -337,8 +546,8 @@ class AdminService {
         ErrorHandler.logError(e, st, 'AdminService.listActivities');
       }
     }
-    entries.sort((a, b) =>
-        (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
+    entries
+        .sort((a, b) => (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
     return entries;
   }
 

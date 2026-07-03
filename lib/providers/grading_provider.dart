@@ -4,6 +4,7 @@ import '../models/pending_sync.dart';
 import '../services/api_client.dart';
 import '../services/storage_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/subscription_service.dart';
 import '../utils/error_handler.dart';
 
 /// مزود الدرجات - يدير بيانات الفصل، مؤشر الطالب الحالي،
@@ -18,6 +19,16 @@ class GradingProvider extends ChangeNotifier {
   String? _lastSyncMessage;
   bool _isOnline = true;
   int _pendingCount = 0;
+
+  /// عدد الطلاب الذين تم استبعادهم من القائمة بسبب تجاوز حد الخطة
+  /// الحالية (maxStudentsPerClass) — 0 يعني عدم وجود أي قصّ.
+  int _trimmedStudentsCount = 0;
+  int get trimmedStudentsCount => _trimmedStudentsCount;
+
+  /// يُرفع إلى true عند رفض فتح فصل جديد لتجاوز حد عدد الفصول
+  /// (maxClassesPerTeacher) الخاص بالباقة الحالية.
+  bool _classLimitExceeded = false;
+  bool get classLimitExceeded => _classLimitExceeded;
 
   /// معرف الفصل الدراسي - قابل للتعيين ديناميكياً بدلاً من التشفير
   int termId = 1;
@@ -84,6 +95,14 @@ class GradingProvider extends ChangeNotifier {
     });
   }
 
+  /// يُعيد مزامنة `_pendingCount` مع القيمة الفعلية في `StorageService`
+  /// (يُستخدم بعد عمليات خارجية تُعدّل صندوق pending_grades_box مباشرة،
+  /// مثل مسح كل البيانات المحلية من شاشة الإعدادات).
+  void refreshPendingCount() {
+    _pendingCount = StorageService.pendingCount;
+    notifyListeners();
+  }
+
   Future<void> loadClassroom({
     required int classId,
     required String className,
@@ -91,7 +110,20 @@ class GradingProvider extends ChangeNotifier {
   }) async {
     _isLoading = true;
     _error = null;
+    _classLimitExceeded = false;
+    _trimmedStudentsCount = 0;
     notifyListeners();
+
+    // فرض حد عدد الفصول (maxClassesPerTeacher) حسب باقة الاشتراك الحالية،
+    // قبل أي استدعاء للسيرفر — يُستثنى فصل العرض التجريبي (classId == 0).
+    final canOpen = await SubscriptionService.canOpenClass(classId);
+    if (!canOpen) {
+      _classLimitExceeded = true;
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
     final cacheKey = 'class_${classId}_$subject';
     try {
       try {
@@ -125,6 +157,25 @@ class GradingProvider extends ChangeNotifier {
           rethrow;
         }
       }
+
+      // فرض حد عدد الطلاب بالفصل (maxStudentsPerClass) حسب الباقة الحالية:
+      // نقصّ القائمة فعلياً على مستوى البيانات (وليس مجرد تحذير شكلي)
+      // حتى لا يتمكن المستخدم من رصد/تصدير درجات طلاب يتجاوزون حد باقته.
+      final maxStudents = await SubscriptionService.getMaxStudentsPerClass();
+      final c = _classroom;
+      if (c != null && maxStudents != -1 && c.students.length > maxStudents) {
+        _trimmedStudentsCount = c.students.length - maxStudents;
+        _classroom = ClassroomData(
+          classId: c.classId,
+          className: c.className,
+          subject: c.subject,
+          fields: c.fields,
+          students: c.students.sublist(0, maxStudents),
+        );
+      }
+
+      // سجّل هذا الفصل كمفتوح فعلياً بعد نجاح التحميل (من السيرفر أو الكاش)
+      await SubscriptionService.markClassOpened(classId);
     } catch (e) {
       _error = ErrorHandler.humanize(e);
     } finally {
@@ -399,6 +450,8 @@ class GradingProvider extends ChangeNotifier {
     _gradingFinished = false; // إعادة تعيين علم الانتهاء عند بدء جلسة جديدة
     _error = null;
     _lastSyncMessage = null;
+    _trimmedStudentsCount = 0;
+    _classLimitExceeded = false;
     notifyListeners();
   }
 }
