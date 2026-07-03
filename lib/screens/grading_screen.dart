@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../providers/grading_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/admin_service.dart';
 import '../services/api_client.dart';
 import '../services/voice_service.dart';
 import '../services/nlp_parser.dart';
@@ -56,6 +57,15 @@ class _GradingScreenState extends State<GradingScreen> {
   String _transcript = '';
   bool _useServerTranscription = false;
 
+  /// سقف إداري: عندما يُعطّل المطور "الإدخال الصوتي السحابي" من إعدادات
+  /// النظام، لا يُسمح باستخدام مسار Whisper AI (السيرفر) إطلاقاً هنا،
+  /// حتى لو كان المستخدم قد فعّله سابقاً في هذه الجلسة.
+  bool _serverSpeechAllowedBySystem = true;
+
+  /// سقف إداري: عندما يُعطّل المطور "الوضع الأوفلاين" من إعدادات النظام،
+  /// يُمنع المستخدم من الاستمرار في الرصد بدون اتصال إنترنت فعلي.
+  bool _offlineModeAllowedBySystem = true;
+
   // ===== Smart mode (auto-advance + continuous listen) =====
   bool _smartMode = true;
   int _currentFieldIndex = 0;
@@ -70,6 +80,23 @@ class _GradingScreenState extends State<GradingScreen> {
   void initState() {
     super.initState();
     _initVoice();
+    _loadSystemFeatureFlags();
+    // تتبع استخدام: بدء جلسة رصد جديدة (لأغراض إحصاءات المطور فقط،
+    // ولا يعمل إطلاقاً إذا كانت التحليلات معطّلة من إعدادات النظام)
+    AdminService.trackEvent('grading_session_started');
+  }
+
+  Future<void> _loadSystemFeatureFlags() async {
+    final serverSpeechAllowed = await AdminService.isServerSpeechEnabled();
+    final offlineAllowed = await AdminService.isOfflineModeEnabled();
+    if (!mounted) return;
+    setState(() {
+      _serverSpeechAllowedBySystem = serverSpeechAllowed;
+      _offlineModeAllowedBySystem = offlineAllowed;
+      // إذا عطّل المطور الميزة على مستوى النظام، أوقف استخدامها فوراً
+      // حتى لو كانت مفعّلة محلياً في نفس الجلسة.
+      if (!serverSpeechAllowed) _useServerTranscription = false;
+    });
   }
 
   @override
@@ -598,7 +625,11 @@ class _GradingScreenState extends State<GradingScreen> {
       });
     }
 
-    if (_useServerTranscription) {
+    // فرض السقف الإداري: امنع استخدام مسار السيرفر (Whisper AI) إذا
+    // كان المطور قد عطّله من إعدادات النظام، حتى لو كان المفتاح المحلي
+    // لا يزال مفعّلاً من جلسة سابقة.
+    final useServer = _useServerTranscription && _serverSpeechAllowedBySystem;
+    if (useServer) {
       try {
         await voiceService.startRecording();
         if (mounted) setState(() {});
@@ -706,8 +737,10 @@ class _GradingScreenState extends State<GradingScreen> {
     final ok = await grading.saveCurrentStudent();
     if (!mounted) return;
     if (ok) {
+      AdminService.trackEvent('grade_synced_online');
       if (!silent) _toast('تم حفظ الدرجات على السيرفر', success: true);
     } else {
+      AdminService.trackEvent('grade_saved_locally');
       if (!silent) {
         _toast('تم الحفظ محلياً، سيتم المزامنة تلقائياً عند توفر الإنترنت');
       }
@@ -754,6 +787,7 @@ class _GradingScreenState extends State<GradingScreen> {
     if (!ok) {
       _toast('فشل التصدير — حاول مرة أخرى', error: true);
     } else {
+      AdminService.trackEvent('excel_export_completed');
       _toast('تم التصدير بنجاح ✅', success: true);
     }
   }
@@ -784,6 +818,16 @@ class _GradingScreenState extends State<GradingScreen> {
     final cur = grading.currentStudent;
     final total = grading.students.length;
     final idx = grading.currentIndex;
+
+    // فرض السقف الإداري: إذا عطّل المطور "الوضع الأوفلاين" من إعدادات
+    // النظام، لا يُسمح بمتابعة الرصد بدون اتصال إنترنت فعلي (باستثناء
+    // العرض التجريبي الذي لا يعتمد أصلاً على مزامنة حقيقية).
+    final blockedByOfflinePolicy = !_offlineModeAllowedBySystem &&
+        !grading.isOnline &&
+        widget.classId != 0;
+    if (blockedByOfflinePolicy) {
+      return _buildOfflineBlockedScreen();
+    }
 
     if (cur == null) {
       // حالة: انتهت قائمة الطلاب بالكامل (بعد آخر طالب)
@@ -1109,6 +1153,85 @@ class _GradingScreenState extends State<GradingScreen> {
     );
   }
 
+  /// شاشة تُعرض عندما يكون الجهاز أوفلاين والمطور قد عطّل "الوضع
+  /// الأوفلاين" من إعدادات النظام — تمنع الاستمرار في الرصد دون اتصال
+  /// حقيقي بدلاً من ترك الإعداد شكلياً بلا أي تأثير فعلي.
+  Widget _buildOfflineBlockedScreen() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.wifi_off_rounded,
+                    size: 50,
+                    color: AppColors.error,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'الوضع الأوفلاين غير متاح حالياً',
+                  style: GoogleFonts.cairo(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'قام المطور بتعطيل العمل بدون إنترنت مؤقتاً.\n'
+                  'يرجى الاتصال بالإنترنت والمحاولة مرة أخرى.',
+                  style: GoogleFonts.cairo(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.7,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 26),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    if (mounted) setState(() {});
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(
+                    'إعادة المحاولة',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text('العودة', style: GoogleFonts.cairo()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStudentCard(dynamic student, GradingProvider g) {
     final totalPossible = g.fields.fold<double>(0, (s, f) => s + f.max);
     final percent = totalPossible > 0
@@ -1421,16 +1544,20 @@ class _GradingScreenState extends State<GradingScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Switch(
-                  value: _useServerTranscription,
-                  onChanged: (v) =>
-                      setState(() => _useServerTranscription = v),
+                  value: _useServerTranscription &&
+                      _serverSpeechAllowedBySystem,
+                  onChanged: !_serverSpeechAllowedBySystem
+                      ? null
+                      : (v) => setState(() => _useServerTranscription = v),
                   activeThumbColor: AppColors.primary,
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  _useServerTranscription
-                      ? 'تحويل عبر السيرفر (Whisper AI)'
-                      : 'تحويل على الجهاز (سريع)',
+                  !_serverSpeechAllowedBySystem
+                      ? 'السيرفر معطّل حالياً من قِبل المطور'
+                      : _useServerTranscription
+                          ? 'تحويل عبر السيرفر (Whisper AI)'
+                          : 'تحويل على الجهاز (سريع)',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     color: AppColors.textSecondary,

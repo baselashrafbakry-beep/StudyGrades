@@ -22,6 +22,7 @@ class _ActivateSubscriptionScreenState
   bool _isLoading = false;
   String? _errorMsg;
   UserSubscription? _currentSub;
+  String? _deviceId;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
 
@@ -34,6 +35,12 @@ class _ActivateSubscriptionScreenState
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeIn);
     _loadCurrentSub();
+    _loadDeviceId();
+  }
+
+  Future<void> _loadDeviceId() async {
+    final id = await SubscriptionService.getDeviceId();
+    if (mounted) setState(() => _deviceId = id);
   }
 
   @override
@@ -206,6 +213,9 @@ class _ActivateSubscriptionScreenState
                       // بطاقة إدخال الكود
                       _buildActivationCard(),
                       const SizedBox(height: 20),
+                      // معرّف الجهاز (لطلب كود مخصص من المطور)
+                      _buildDeviceIdCard(),
+                      const SizedBox(height: 20),
                       // كيفية الحصول على الكود
                       _buildHowToGetCode(),
                       const SizedBox(height: 20),
@@ -363,7 +373,7 @@ class _ActivateSubscriptionScreenState
                         _codeCtrl.clear();
                         setState(() => _errorMsg = null);
                       },
-                      icon: const Icon(Icons.clear_rounded,
+                      icon: Icon(Icons.clear_rounded,
                           color: AppColors.textSecondary),
                     )
                   : IconButton(
@@ -442,6 +452,90 @@ class _ActivateSubscriptionScreenState
                         ),
                       ],
                     ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeviceIdCard() {
+    final id = _deviceId;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.smartphone_rounded,
+                  color: AppColors.primary, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'معرّف جهازك (Device ID)',
+                style: GoogleFonts.cairo(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'أرسل هذا المعرّف للمطوّر عند طلب رمز اشتراك مدفوع؛ سيتم '
+            'توليد رمز تفعيل مخصص لهذا الجهاز فقط، ولا يعمل على أي جهاز آخر.',
+            style: GoogleFonts.cairo(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: id == null
+                ? null
+                : () {
+                    Clipboard.setData(ClipboardData(text: id));
+                    Fluttertoast.showToast(
+                      msg: 'تم نسخ معرّف الجهاز ✅',
+                      backgroundColor: AppColors.success,
+                      textColor: Colors.white,
+                    );
+                  },
+            child: Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.copy_rounded,
+                      color: AppColors.primary, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    id ?? 'جارِ التحميل...',
+                    style: GoogleFonts.cairo(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      letterSpacing: 1.5,
+                    ),
+                    textDirection: TextDirection.ltr,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

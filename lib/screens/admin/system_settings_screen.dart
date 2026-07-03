@@ -17,7 +17,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   final _appNameCtrl = TextEditingController();
   final _supportEmailCtrl = TextEditingController();
   bool _maintenanceMode = false;
-  bool _allowRegistration = false;
   bool _enableAnalytics = true;
   bool _enableServerSpeech = true;
   bool _enableOfflineMode = true;
@@ -48,11 +47,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
         AdminService.developerEmail;
     _maintenanceMode = await AdminService.getSystemSetting<bool>(
           'maintenance_mode',
-          defaultValue: false,
-        ) ??
-        false;
-    _allowRegistration = await AdminService.getSystemSetting<bool>(
-          'allow_registration',
           defaultValue: false,
         ) ??
         false;
@@ -89,8 +83,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
     await AdminService.setSystemSetting(
         'support_email', _supportEmailCtrl.text.trim());
     await AdminService.setSystemSetting('maintenance_mode', _maintenanceMode);
-    await AdminService.setSystemSetting(
-        'allow_registration', _allowRegistration);
     await AdminService.setSystemSetting('enable_analytics', _enableAnalytics);
     await AdminService.setSystemSetting(
         'enable_server_speech', _enableServerSpeech);
@@ -147,15 +139,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                           value: _maintenanceMode,
                           onChanged: (v) =>
                               setState(() => _maintenanceMode = v),
-                        ),
-                        _switchTile(
-                          icon: Icons.person_add_rounded,
-                          color: AppColors.warning,
-                          title: 'السماح بالتسجيل الذاتي',
-                          subtitle: 'تمكين المستخدمين من إنشاء حسابات',
-                          value: _allowRegistration,
-                          onChanged: (v) =>
-                              setState(() => _allowRegistration = v),
                         ),
                         _switchTile(
                           icon: Icons.analytics_rounded,

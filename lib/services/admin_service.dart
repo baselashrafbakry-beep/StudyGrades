@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import '../models/user_model.dart';
 import '../utils/error_handler.dart';
@@ -37,7 +39,7 @@ class AdminService {
   static const String appName           = 'Study Grades Voice';
   static const String appNameAr         = 'نظام رصد الدرجات الصوتي';
   static const String copyrightYear     = '2026';
-  static const String packageName       = 'com.voicegrader.grader';
+  static const String packageName       = 'com.myapp.mobile';
   static const String serverUrl         = 'studygrades2026.pythonanywhere.com';
   static const String serverUrlFull     = 'https://studygrades2026.pythonanywhere.com';
 
@@ -57,6 +59,10 @@ class AdminService {
         isActive: true,
         createdAt: DateTime(2026, 1, 1),
       );
+      // ملاحظة أمنية: يُنصح بشدة بتغيير كلمة المرور الافتراضية فور أول
+      // دخول عبر شاشة "إدارة المستخدمين" → "إعادة تعيين كلمة المرور"،
+      // لأن كلمات المرور الافتراضية المكتوبة في الكود المصدري قد تكون
+      // قابلة للاستخلاص من ملف APK المُفكَّك في حالات نادرة.
       await _saveUserDirect(developer, password: 'Basel@2026');
       await logActivity('تهيئة النظام', 'تم تهيئة $appName v$appVersion بنجاح');
     } else {
@@ -80,18 +86,37 @@ class AdminService {
     }
   }
 
-  /// حفظ مستخدم مع كلمة المرور (مشفّرة بـ base64 - مناسبة للنسخة المحلية)
+  // ═══════════════════════════════════════════════════════
+  // نظام تشفير كلمات المرور — SHA-256 + Salt عشوائي لكل مستخدم
+  // (أقوى من base64 القديم؛ base64 ليس تشفيراً بل ترميزاً فقط
+  // ويمكن فك تشفيره فوراً بدون أي مفتاح)
+  // ═══════════════════════════════════════════════════════
+  static String _generateSalt() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  static String _hashPassword(String password, String salt) {
+    final bytes = utf8.encode('$salt:$password');
+    return sha256.convert(bytes).toString();
+  }
+
+  /// حفظ مستخدم مع كلمة المرور (SHA-256 + Salt عشوائي فريد لكل مستخدم)
   static Future<void> _saveUserDirect(User user, {String? password}) async {
     final box = Hive.box(_usersBox);
     final data = user.toJson();
     if (password != null) {
-      data['password_hash'] = base64Encode(utf8.encode(password));
+      final salt = _generateSalt();
+      data['password_salt'] = salt;
+      data['password_hash'] = _hashPassword(password, salt);
     } else {
-      // إن لم تُمرر كلمة مرور، احتفظ بالقديمة إن وُجدت
+      // إن لم تُمرر كلمة مرور، احتفظ بالقديمة إن وُجدت (hash + salt)
       final existing = box.get(user.id.toString());
       if (existing != null) {
         final prev = jsonDecode(existing as String) as Map<String, dynamic>;
         data['password_hash'] = prev['password_hash'];
+        data['password_salt'] = prev['password_salt'];
       }
     }
     await box.put(user.id.toString(), jsonEncode(data));
@@ -226,16 +251,16 @@ class AdminService {
   }
 
   /// التحقق من بيانات تسجيل الدخول محلياً (للاستخدام كـ fallback)
-  /// ملاحظة أمنية: كلمة المرور مشفّرة بـ base64 فقط (ليس hash حقيقي).
-  /// هذا مقبول للنسخة المحلية/offline حيث لا يوجد سيرفر.
-  /// في الإنتاج يُفضَّل استخدام bcrypt أو argon2.
+  /// يدعم صيغة SHA-256+Salt الجديدة، مع ترحيل تلقائي وشفاف لأي حساب
+  /// قديم لا يزال مخزَّناً بصيغة base64 (النظام السابق) عند أول دخول ناجح.
   static Future<User?> verifyCredentials(
     String username,
     String password,
   ) async {
     await ensureOpen();
     final box = Hive.box(_usersBox);
-    final inputHash = base64Encode(utf8.encode(password));
+    // صيغة قديمة (base64) — للتوافق العكسي فقط، تُرحَّل تلقائياً بعد أول دخول
+    final legacyHash = base64Encode(utf8.encode(password));
     for (final key in box.keys) {
       try {
         final raw = box.get(key);
@@ -245,15 +270,31 @@ class AdminService {
         if (dbUsername != username.toLowerCase()) continue;
 
         final dbHash = data['password_hash']?.toString() ?? '';
-        if (dbHash == inputHash) {
+        final dbSalt = data['password_salt']?.toString();
+
+        bool matched = false;
+        if (dbSalt != null && dbSalt.isNotEmpty) {
+          // الصيغة الجديدة الآمنة: SHA-256(salt + password)
+          matched = _hashPassword(password, dbSalt) == dbHash;
+        } else {
+          // الصيغة القديمة: base64 فقط (لحسابات أُنشئت قبل هذا التحديث)
+          matched = dbHash == legacyHash;
+        }
+
+        if (matched) {
           // فحص الحالة أولاً قبل تحديث آخر دخول
           final user = User.fromJson(data);
           if (!user.isActive) {
             throw Exception('هذا الحساب موقوف. تواصل مع المدير.');
           }
-          // تحديث آخر دخول
+          // تحديث آخر دخول، وترحيل تلقائي إلى الصيغة الآمنة الجديدة
+          // إذا كان الحساب لا يزال يستخدم base64 القديم
           final updated = user.copyWith(lastLogin: DateTime.now());
-          await _saveUserDirect(updated);
+          if (dbSalt == null || dbSalt.isEmpty) {
+            await _saveUserDirect(updated, password: password);
+          } else {
+            await _saveUserDirect(updated);
+          }
           return updated;
         }
       } catch (e) {
@@ -322,6 +363,81 @@ class AdminService {
     final box = Hive.box(_settingsBox);
     await box.put(key, value);
     await logActivity('إعدادات النظام', 'تم تعديل: $key');
+  }
+
+  // ─────────── إعدادات النظام: دوال مساعدة (Feature Flags) ───────────
+  // هذه الدوال تُستخدم في جميع أنحاء التطبيق لفرض احترام مفاتيح التحكم
+  // التي يُفعّلها/يُعطّلها المطور من شاشة "إعدادات النظام"، بدلاً من ترك
+  // هذه المفاتيح شكلية بلا أي تأثير فعلي.
+  static Future<bool> isServerSpeechEnabled() async =>
+      (await getSystemSetting<bool>(
+        'enable_server_speech',
+        defaultValue: true,
+      )) ??
+      true;
+
+  static Future<bool> isOfflineModeEnabled() async =>
+      (await getSystemSetting<bool>(
+        'enable_offline_mode',
+        defaultValue: true,
+      )) ??
+      true;
+
+  static Future<bool> isAnalyticsEnabled() async =>
+      (await getSystemSetting<bool>(
+        'enable_analytics',
+        defaultValue: true,
+      )) ??
+      true;
+
+  // ─────────────────── إحصاءات الاستخدام المحلية (Analytics) ───────────────────
+  // نظام تتبع خفيف ومحلي بالكامل (بدون أي اتصال خارجي أو بيانات شخصية):
+  // يُسجّل فقط عدّادات لأحداث استخدام مجهولة (مثال: "grade_synced_online": 42)
+  // ويُفعَّل/يُعطَّل بالكامل عبر مفتاح "تفعيل التحليلات" في إعدادات النظام.
+  static const String _analyticsBox = 'admin_analytics_box';
+
+  static Future<void> _ensureAnalyticsBoxOpen() async {
+    if (!Hive.isBoxOpen(_analyticsBox)) {
+      await Hive.openBox(_analyticsBox);
+    }
+  }
+
+  /// تسجيل حدث استخدام (عدّاد تراكمي) — لا يفعل شيئاً إذا كانت
+  /// التحليلات معطّلة من إعدادات النظام. آمن تماماً عند الفشل.
+  static Future<void> trackEvent(String eventName) async {
+    try {
+      if (!await isAnalyticsEnabled()) return;
+      await _ensureAnalyticsBoxOpen();
+      final box = Hive.box(_analyticsBox);
+      final current = (box.get(eventName) as int?) ?? 0;
+      await box.put(eventName, current + 1);
+      await box.put('_last_updated', DateTime.now().toIso8601String());
+    } catch (_) {
+      // التتبع اختياري بالكامل ويجب ألا يوقف أي وظيفة أساسية عند الفشل
+    }
+  }
+
+  /// جلب كل عدّادات الاستخدام المسجَّلة محلياً
+  static Future<Map<String, int>> getAnalyticsCounters() async {
+    await _ensureAnalyticsBoxOpen();
+    final box = Hive.box(_analyticsBox);
+    final result = <String, int>{};
+    for (final key in box.keys) {
+      if (key == '_last_updated') continue;
+      final v = box.get(key);
+      if (v is int) result[key.toString()] = v;
+    }
+    return result;
+  }
+
+  static Future<String?> getAnalyticsLastUpdated() async {
+    await _ensureAnalyticsBoxOpen();
+    return Hive.box(_analyticsBox).get('_last_updated') as String?;
+  }
+
+  static Future<void> clearAnalyticsCounters() async {
+    await _ensureAnalyticsBoxOpen();
+    await Hive.box(_analyticsBox).clear();
   }
 
   // ─────────────────── إحصاءات النظام ───────────────────

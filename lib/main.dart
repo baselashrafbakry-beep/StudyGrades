@@ -13,7 +13,6 @@ import 'services/admin_service.dart';
 import 'services/connectivity_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/error_handler.dart';
-// import 'utils/error_recovery.dart'  // متاح للاستخدام عند الحاجة;
 
 /// ═══════════════════════════════════════════════════
 /// Study Grades Voice - نظام رصد الدرجات الصوتي
@@ -156,6 +155,17 @@ class StudyGradesApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
+          // تحديث حالة الوضع الليلي العامة لكل ألوان التطبيق (AppColors)
+          // بحيث تنعكس على كل الشاشات تلقائياً بدون تعديل كل شاشة يدوياً
+          final platformBrightness =
+              WidgetsBinding.instance.platformDispatcher.platformBrightness;
+          final bool effectiveIsDark = switch (themeProvider.themeMode) {
+            ThemeMode.dark => true,
+            ThemeMode.light => false,
+            ThemeMode.system => platformBrightness == Brightness.dark,
+          };
+          AppColors.updateBrightness(effectiveIsDark);
+
           return MaterialApp(
             // ─── بيانات التطبيق ───
             title: 'Study Grades Voice',

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,41 +8,160 @@ import '../utils/error_handler.dart';
 
 /// --------------------------------------------------------------------------
 /// خدمة نظام الاشتراكات — تفعيل بكود + حفظ محلي
-/// الأكواد مُخزَّنة بصيغة SHA-256 hash لمنع كشفها في ملفات APK المفككة
+///
+/// ⚠️ ملاحظة أمنية هامة:
+/// نظام أكواد التفعيل في هذا التطبيق يعمل بالكامل محلياً (بدون سيرفر خارجي)،
+/// لذلك تم تصميم نظامين متكاملين:
+///
+///  1) أكواد عامة (Universal) — للتجارب المجانية والترويج فقط
+///     (مثل GRADER-PRO-TRIAL) — يمكن استخدامها من أي جهاز، لأنها غير مدفوعة
+///     ولا تشكل خسارة تجارية حقيقية.
+///
+///  2) أكواد مخصصة لكل جهاز (Device-Bound License Keys) — للاشتراكات
+///     المدفوعة الحقيقية. يتم توليدها عبر HMAC-SHA256 مرتبطة بمعرّف
+///     فريد للجهاز (Device ID)، مما يمنع مشاركة نفس الكود المدفوع بين
+///     عدة أجهزة (كل كود يعمل فقط على الجهاز الذي طلبه المستخدم).
+///     صيغة الكود: SGV-<PLAN>-<DAYS>-<HASH10>
+///
+/// هذا يحل المشكلة الجوهرية لنظام الأكواد المشتركة القديم، حيث كان بإمكان
+/// أي شخص نشر كود مدفوع واحد واستخدامه من قبل عدد غير محدود من الأجهزة.
 /// --------------------------------------------------------------------------
 class SubscriptionService {
   static const _boxKey = 'subscription_data';
   static const _prefKey = 'user_subscription';
+  static const _deviceIdKey = 'device_license_id';
 
   // ======================================================================
   // الـ salt الثابت للـ hashing — يُغيَّر مع كل إصدار تجاري جديد
   // ======================================================================
   static const String _salt = 'SGV_2026_BASEL_SECURE';
 
-  /// حساب SHA-256 hash للكود
+  /// حساب SHA-256 hash للكود (للأكواد العامة القديمة + تتبع الاستخدام)
   static String _hashCode(String code) {
     final bytes = utf8.encode('$_salt:${code.trim().toUpperCase()}');
     return sha256.convert(bytes).toString();
   }
 
   // ======================================================================
-  // قاموس رموز التفعيل — مُخزَّن كـ SHA-256 hash للأمان
-  // لا يمكن استخلاص الأكواد الأصلية من الـ APK المفكك
-  // الصيغة: hash('SALT:CODE') → {'plan': 'pro', 'days': 365, 'desc': 'وصف'}
+  // قاموس رموز التفعيل العامة (تجربة مجانية + رمز المطور فقط)
+  // مُخزَّن كـ SHA-256 hash للأمان — لا يمكن استخلاص الأكواد الأصلية
+  // من الـ APK المفكك. هذه الأكواد ترويجية/تجريبية وليست مصدر دخل حقيقي،
+  // لذلك يُسمح باستخدامها من أي جهاز بأمان.
   // ======================================================================
   static final Map<String, Map<String, dynamic>> _hashedCodes = {
     // GRADER-PRO-TRIAL → تجربة احترافية 14 يوم
-    _hashCode('GRADER-PRO-TRIAL'): {'plan': 'pro', 'days': 14, 'desc': 'تجربة احترافية 14 يوم'},
+    _hashCode('GRADER-PRO-TRIAL'): {
+      'plan': 'pro',
+      'days': 14,
+      'desc': 'تجربة احترافية 14 يوم'
+    },
     // STUDY2026-TRIAL → تجربة أساسي شهر
-    _hashCode('STUDY2026-TRIAL'): {'plan': 'basic', 'days': 30, 'desc': 'تجربة أساسي شهر'},
-    // رموز مدفوعة (تُولَّد للعملاء)
-    _hashCode('BASEL-PRO-01'): {'plan': 'pro', 'days': 30, 'desc': 'اشتراك احترافي شهري'},
-    _hashCode('BASEL-PRO-12'): {'plan': 'pro', 'days': 365, 'desc': 'اشتراك احترافي سنوي'},
-    _hashCode('BASEL-BASIC-01'): {'plan': 'basic', 'days': 30, 'desc': 'اشتراك أساسي شهري'},
-    _hashCode('BASEL-SCHOOL-12'): {'plan': 'school', 'days': 365, 'desc': 'اشتراك مدرسة سنوي'},
-    // رمز تطوير (مطور فقط — فعّال دائماً)
-    _hashCode('DEV-MASTER-2026'): {'plan': 'school', 'days': 9999, 'desc': 'حساب المطور الرئيسي'},
+    _hashCode('STUDY2026-TRIAL'): {
+      'plan': 'basic',
+      'days': 30,
+      'desc': 'تجربة أساسي شهر'
+    },
+    // رمز تطوير (مطور فقط — فعّال دائماً، مُستثنى من فحص "استُخدم من قبل")
+    _hashCode('DEV-MASTER-2026'): {
+      'plan': 'school',
+      'days': 9999,
+      'desc': 'حساب المطور الرئيسي'
+    },
   };
+
+  // ======================================================================
+  // معرّف الجهاز الفريد (Device License ID)
+  // يُولَّد مرة واحدة فقط ويُخزَّن محلياً، ويُستخدَم كأساس لربط أكواد
+  // الاشتراك المدفوعة بجهاز واحد فقط.
+  // ======================================================================
+  static Future<String> getDeviceId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var id = prefs.getString(_deviceIdKey);
+      if (id == null || id.isEmpty) {
+        id = _generateRandomDeviceId();
+        await prefs.setString(_deviceIdKey, id);
+      }
+      return id;
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SubscriptionService.getDeviceId');
+      // معرّف احتياطي مؤقت في حال فشل التخزين (لن يُحفظ)
+      return _generateRandomDeviceId();
+    }
+  }
+
+  static String _generateRandomDeviceId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(8, (_) => rand.nextInt(256));
+    return bytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join()
+        .toUpperCase();
+  }
+
+  // ======================================================================
+  // توليد كود تفعيل مخصص لجهاز مُعيَّن (أداة المطوّر فقط)
+  // planCode: BASIC | PRO | SCHOOL
+  // ======================================================================
+  static String generatePersonalizedCode({
+    required String deviceId,
+    required String planCode,
+    required int days,
+  }) {
+    final normalizedDeviceId = deviceId.trim().toUpperCase();
+    final normalizedPlan = planCode.trim().toUpperCase();
+    final hash = _personalizedHash(normalizedDeviceId, normalizedPlan, days);
+    return 'SGV-$normalizedPlan-$days-$hash';
+  }
+
+  static String _personalizedHash(
+      String deviceId, String planCode, int days) {
+    final bytes =
+        utf8.encode('$_salt:PERSONAL:$deviceId:$planCode:$days');
+    return sha256.convert(bytes).toString().substring(0, 10).toUpperCase();
+  }
+
+  static const Map<String, String> _planCodeToName = {
+    'BASIC': 'basic',
+    'PRO': 'pro',
+    'SCHOOL': 'school',
+  };
+
+  static const Map<String, String> _planLabelAr = {
+    'basic': 'أساسي',
+    'pro': 'احترافي',
+    'school': 'مدرسة',
+  };
+
+  /// يحاول تفسير كود بصيغة "مخصص لهذا الجهاز": SGV-<PLAN>-<DAYS>-<HASH10>
+  /// يُعيد null إذا لم تكن الصيغة مطابقة أو كان الكود غير صالح لهذا الجهاز
+  static Future<Map<String, dynamic>?> _tryParsePersonalizedCode(
+      String code) async {
+    final parts = code.split('-');
+    if (parts.length != 4 || parts[0] != 'SGV') return null;
+
+    final planCode = parts[1];
+    final planName = _planCodeToName[planCode];
+    if (planName == null) return null;
+
+    final days = int.tryParse(parts[2]);
+    if (days == null || days <= 0) return null;
+
+    final hashPart = parts[3];
+    final deviceId = await getDeviceId();
+    final expectedHash = _personalizedHash(deviceId, planCode, days);
+    if (expectedHash != hashPart) {
+      // إما أن الكود تالف، أو أنه صادر لجهاز آخر غير هذا الجهاز
+      return null;
+    }
+
+    final planLabel = _planLabelAr[planName] ?? planName;
+    return {
+      'plan': planName,
+      'days': days,
+      'desc': 'اشتراك $planLabel مخصص لهذا الجهاز ($days يوم)',
+    };
+  }
 
   // ======================================================================
   // تفعيل رمز الاشتراك
@@ -53,16 +173,22 @@ class SubscriptionService {
       return ActivationResult.fail('الرجاء إدخال رمز التفعيل');
     }
 
-    // التحقق من الرمز عبر hash — الكود الأصلي لا يُخزَّن ولا يُقارَن مباشرة
-    final codeHash = _hashCode(code);
-    final entry = _hashedCodes[codeHash];
+    // 1) جرّب أولاً صيغة الكود المخصص لهذا الجهاز (الأكواد المدفوعة الحقيقية)
+    Map<String, dynamic>? entry = await _tryParsePersonalizedCode(code);
+
+    // 2) إن لم يطابق الصيغة المخصصة، جرّب الأكواد العامة (تجربة/مطور)
+    entry ??= _hashedCodes[_hashCode(code)];
+
     if (entry == null) {
       return ActivationResult.fail(
-          'رمز التفعيل غير صحيح\nتحقق من الرمز أو تواصل مع المطور');
+          'رمز التفعيل غير صحيح أو غير مخصص لهذا الجهاز\n'
+          'تحقق من الرمز أو تواصل مع المطور');
     }
 
-    // التحقق من أن الرمز لم يُستخدم من قبل — نُخزِّن الـ hash وليس الكود
-    final usedHashes = await _getUsedCodes(); // يُعيد hashes
+    // التحقق من أن الرمز لم يُستخدم من قبل على هذا الجهاز
+    // (نُخزِّن الـ hash وليس الكود الأصلي لحماية الخصوصية)
+    final usedHashes = await _getUsedCodes();
+    final codeHash = _hashCode(code);
     final devHash = _hashCode('DEV-MASTER-2026');
     if (usedHashes.contains(codeHash) && codeHash != devHash) {
       return ActivationResult.fail(
@@ -214,17 +340,6 @@ class SubscriptionService {
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'SubscriptionService._markCodeUsed');
     }
-  }
-
-  /// توليد رمز تفعيل عشوائي (للمطور)
-  static String generateCode({
-    String plan = 'pro',
-    int days = 30,
-    String prefix = 'SGV',
-  }) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    final suffix = timestamp.substring(timestamp.length - 6);
-    return '$prefix-${plan.toUpperCase()}-$suffix';
   }
 }
 

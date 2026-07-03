@@ -17,6 +17,9 @@ class SystemStatsScreen extends StatefulWidget {
 class _SystemStatsScreenState extends State<SystemStatsScreen> {
   Map<String, dynamic> _stats = {};
   List<User> _users = [];
+  Map<String, int> _analyticsCounters = {};
+  String? _analyticsLastUpdated;
+  bool _analyticsEnabled = true;
   bool _loading = true;
 
   @override
@@ -30,10 +33,16 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     try {
       final stats = await AdminService.getSystemStats();
       final users = await AdminService.getAllUsers();
+      final analyticsEnabled = await AdminService.isAnalyticsEnabled();
+      final counters = await AdminService.getAnalyticsCounters();
+      final lastUpdated = await AdminService.getAnalyticsLastUpdated();
       if (!mounted) return;
       setState(() {
         _stats = stats;
         _users = users;
+        _analyticsEnabled = analyticsEnabled;
+        _analyticsCounters = counters;
+        _analyticsLastUpdated = lastUpdated;
         _loading = false;
       });
     } catch (e, st) {
@@ -64,6 +73,8 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
                           _buildPieChartSection(),
                           const SizedBox(height: 16),
                           _buildBarChartSection(),
+                          const SizedBox(height: 16),
+                          _buildUsageAnalyticsSection(),
                           const SizedBox(height: 16),
                           _buildRecentUsers(),
                         ],
@@ -477,6 +488,178 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
         ],
       ),
     );
+  }
+
+  /// عدّادات استخدام حقيقية (محلية بالكامل، بدون أي اتصال خارجي) —
+  /// تُحسب فقط عندما يكون "تفعيل التحليلات" مفعّلاً من إعدادات النظام.
+  static const Map<String, String> _eventLabelsAr = {
+    'grading_session_started': 'جلسات رصد بدأت',
+    'grade_synced_online': 'درجات تمت مزامنتها فوراً',
+    'grade_saved_locally': 'درجات حُفظت محلياً (أوفلاين)',
+    'excel_export_completed': 'ملفات Excel تم تصديرها',
+  };
+
+  Widget _buildUsageAnalyticsSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_rounded, color: AppColors.warning),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'إحصاءات الاستخدام (محلية)',
+                  style: GoogleFonts.cairo(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (!_analyticsEnabled)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'معطّلة',
+                    style: GoogleFonts.cairo(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.error,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'عدّادات مجهولة الهوية تُحسب على هذا الجهاز فقط — لا تُرسَل '
+            'لأي خادم خارجي. يمكن تعطيلها كلياً من "إعدادات النظام".',
+            style: GoogleFonts.cairo(
+              fontSize: 10,
+              color: AppColors.textSecondary,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (!_analyticsEnabled)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: AppColors.textHint,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'التحليلات معطّلة حالياً — لن يتم تسجيل أي أحداث جديدة',
+                      style: GoogleFonts.cairo(
+                        fontSize: 11,
+                        color: AppColors.textHint,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_analyticsCounters.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'لا توجد بيانات استخدام مسجّلة بعد',
+                style: GoogleFonts.cairo(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            )
+          else ...[
+            ..._analyticsCounters.entries.map((e) {
+              final label = _eventLabelsAr[e.key] ?? e.key;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: GoogleFonts.cairo(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.13),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${e.value}',
+                        style: GoogleFonts.cairo(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (_analyticsLastUpdated != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'آخر تحديث: ${_formatDate(_analyticsLastUpdated!)}',
+                style: GoogleFonts.cairo(
+                  fontSize: 9,
+                  color: AppColors.textHint,
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String iso) {
+    try {
+      final d = DateTime.parse(iso);
+      return '${d.year}/${d.month.toString().padLeft(2, '0')}/'
+          '${d.day.toString().padLeft(2, '0')} '
+          '${d.hour.toString().padLeft(2, '0')}:'
+          '${d.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso;
+    }
   }
 
   Widget _buildRecentUsers() {

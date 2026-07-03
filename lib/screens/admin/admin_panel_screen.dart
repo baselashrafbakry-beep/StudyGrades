@@ -11,6 +11,7 @@ import 'users_management_screen.dart';
 import 'system_stats_screen.dart';
 import 'system_settings_screen.dart';
 import 'admin_activity_log_screen.dart';
+import 'license_generator_screen.dart';
 
 /// لوحة تحكم المطور والمدير الرئيسية
 class AdminPanelScreen extends StatefulWidget {
@@ -518,6 +519,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               ),
             ),
           ),
+          _menuTile(
+            icon: Icons.vpn_key_rounded,
+            iconColor: const Color(0xFF00897B),
+            title: 'توليد رمز اشتراك مخصص',
+            subtitle: 'توليد كود مرتبط بجهاز عميل معيّن',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LicenseGeneratorScreen(),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -585,7 +598,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.arrow_back_ios_rounded,
                 size: 14,
                 color: AppColors.textHint,

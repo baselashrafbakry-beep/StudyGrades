@@ -105,7 +105,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               children: [
                 Text(
                   widget.field.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -113,7 +113,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 ),
                 Text(
                   'الحد الأقصى: ${_format(widget.field.max)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textHint,
                   ),
@@ -153,7 +153,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 ),
                 hintText: '0',
                 suffixText: '/${_format(widget.field.max)}',
-                suffixStyle: const TextStyle(
+                suffixStyle: TextStyle(
                   fontSize: 12,
                   color: AppColors.textHint,
                 ),

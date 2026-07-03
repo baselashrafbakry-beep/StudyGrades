@@ -780,7 +780,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   textAlign: TextAlign.right,
                                 ),
                               ),
-                              const Icon(
+                              Icon(
                                 Icons.arrow_back_ios_new_rounded,
                                 size: 16,
                                 color: AppColors.textHint,

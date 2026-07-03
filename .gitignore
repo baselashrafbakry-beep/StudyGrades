@@ -40,3 +40,7 @@ macos/.symlinks/
 *.bak
 release-key.jks
 key.properties
+
+# Local dev artifacts
+server.log
+upload_files/

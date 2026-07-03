@@ -185,7 +185,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                 color: AppColors.textHint,
                 fontSize: 13,
               ),
-              prefixIcon: const Icon(Icons.search, color: AppColors.textHint),
+              prefixIcon: Icon(Icons.search, color: AppColors.textHint),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 vertical: 10,

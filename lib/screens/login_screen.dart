@@ -720,7 +720,7 @@ class _LoginScreenState extends State<LoginScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.person_outline,
+              Icon(Icons.person_outline,
                   size: 14, color: AppColors.textHint),
               const SizedBox(width: 4),
               Text(
@@ -922,7 +922,7 @@ class _LoginScreenState extends State<LoginScreen>
             ),
             const Spacer(),
             if (canCopy)
-              const Icon(Icons.copy_rounded,
+              Icon(Icons.copy_rounded,
                   size: 14, color: AppColors.textHint),
           ],
         ),

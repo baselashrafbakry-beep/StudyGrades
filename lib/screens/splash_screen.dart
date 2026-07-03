@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
+import 'maintenance_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -122,8 +123,27 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 1500));
     if (!mounted || navigated) return;
 
+    // فحص وضع الصيانة — يُستثنى منه المطور/المدير حتى يتمكنوا من
+    // الدخول وإيقاف الصيانة من لوحة التحكم عند الحاجة
+    bool maintenanceMode = false;
+    try {
+      maintenanceMode = await AdminService.getSystemSetting<bool>(
+            'maintenance_mode',
+            defaultValue: false,
+          )
+              .timeout(const Duration(milliseconds: 800)) ??
+          false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SPLASH] ⚠️ Maintenance check failed: $e');
+    }
+
+    final canBypassMaintenance =
+        isAuth && (auth.user?.canEditSystemSettings ?? false);
+
     Widget nextScreen;
-    if (isAuth) {
+    if (maintenanceMode && !canBypassMaintenance) {
+      nextScreen = const MaintenanceScreen();
+    } else if (isAuth) {
       nextScreen = const HomeScreen();
     } else if (!seenIntro) {
       nextScreen = const OnboardingScreen();

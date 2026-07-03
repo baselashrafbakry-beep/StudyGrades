@@ -548,7 +548,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ],
               ),
             ),
-            const Icon(Icons.copy_rounded, color: AppColors.textHint, size: 18),
+            Icon(Icons.copy_rounded, color: AppColors.textHint, size: 18),
           ],
         ),
       ),

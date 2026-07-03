@@ -30,6 +30,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showStudentNumbers = true;
   bool _useServerSpeech = false;
 
+  /// سقف إداري: عندما يُعطّل المطور "الإدخال الصوتي السحابي" من إعدادات
+  /// النظام، يتم إخفاء/تعطيل هذا الخيار هنا تلقائياً لكل المستخدمين.
+  bool _serverSpeechAllowedBySystem = true;
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +41,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
+    final serverSpeechAllowed = await AdminService.isServerSpeechEnabled();
+    if (!mounted) return;
     setState(() {
       _autoSync = StorageService.getSetting<bool>(
             'auto_sync',
@@ -53,12 +59,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             defaultValue: true,
           ) ??
           true;
-      _useServerSpeech = StorageService.getSetting<bool>(
-            'use_server_speech',
-            defaultValue: false,
-          ) ??
-          false;
+      _serverSpeechAllowedBySystem = serverSpeechAllowed;
+      _useServerSpeech = serverSpeechAllowed &&
+          (StorageService.getSetting<bool>(
+                'use_server_speech',
+                defaultValue: false,
+              ) ??
+              false);
     });
+    // إذا عطّل المطور الميزة على مستوى النظام أثناء تفعيل المستخدم لها
+    // محلياً، اجعل الإعداد المحلي متوافقاً حتى لا يبقى "مفعّلاً" بصمت.
+    if (!serverSpeechAllowed) {
+      await _setSetting('use_server_speech', false);
+    }
   }
 
   Future<void> _setSetting(String key, dynamic value) async {
@@ -132,18 +145,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _sectionTitle('الإدخال الصوتي', Icons.mic_rounded),
                   _settingTile(
                     icon: Icons.cloud_outlined,
-                    iconColor: AppColors.success,
+                    iconColor: _serverSpeechAllowedBySystem
+                        ? AppColors.success
+                        : AppColors.textHint,
                     title: 'استخدام Whisper AI',
-                    subtitle: _useServerSpeech
-                        ? 'دقة عالية - يحتاج إنترنت'
-                        : 'سريع - يعمل أوفلاين',
+                    subtitle: !_serverSpeechAllowedBySystem
+                        ? 'معطّل حالياً من قِبل المطور'
+                        : _useServerSpeech
+                            ? 'دقة عالية - يحتاج إنترنت'
+                            : 'سريع - يعمل أوفلاين',
                     trailing: Switch(
                       value: _useServerSpeech,
                       activeThumbColor: AppColors.primary,
-                      onChanged: (v) {
-                        setState(() => _useServerSpeech = v);
-                        _setSetting('use_server_speech', v);
-                      },
+                      onChanged: !_serverSpeechAllowedBySystem
+                          ? null
+                          : (v) {
+                              setState(() => _useServerSpeech = v);
+                              _setSetting('use_server_speech', v);
+                            },
                     ),
                   ),
                   _settingTile(
@@ -151,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.primary,
                     title: 'لغة التعرف',
                     subtitle: 'العربية المصرية',
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: 16,
                       color: AppColors.textHint,
@@ -165,7 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.info,
                     title: 'سجل النشاطات',
                     subtitle: 'عرض سجل المزامنات والعمليات',
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: 16,
                       color: AppColors.textHint,
@@ -192,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.arrow_forward_ios_rounded,
                             size: 16,
                             color: AppColors.textHint,
@@ -204,7 +223,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.error,
                     title: 'مسح البيانات المخزنة',
                     subtitle: 'حذف الكاش والإعدادات المحلية',
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: 16,
                       color: AppColors.textHint,
@@ -260,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.info,
                     title: 'المطور',
                     subtitle: AdminService.developerName,
-                    trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                    trailing: Icon(Icons.arrow_forward_ios_rounded,
                         size: 16, color: AppColors.textHint),
                     onTap: () => _showDeveloperInfo(),
                   ),
@@ -269,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.success,
                     title: 'واتساب للدعم',
                     subtitle: AdminService.developerPhone,
-                    trailing: const Icon(Icons.copy_rounded,
+                    trailing: Icon(Icons.copy_rounded,
                         size: 16, color: AppColors.textHint),
                     onTap: () {
                       Clipboard.setData(
@@ -286,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.warning,
                     title: 'البريد الإلكتروني',
                     subtitle: AdminService.developerEmail,
-                    trailing: const Icon(Icons.copy_rounded,
+                    trailing: Icon(Icons.copy_rounded,
                         size: 16, color: AppColors.textHint),
                     onTap: () {
                       Clipboard.setData(
@@ -303,7 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.info,
                     title: 'المساعدة والدعم',
                     subtitle: 'تعليمات استخدام التطبيق',
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: 16,
                       color: AppColors.textHint,
@@ -315,7 +334,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: AppColors.primary,
                     title: 'عن التطبيق',
                     subtitle: 'المعلومات التقنية والقانونية',
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.arrow_forward_ios_rounded,
                       size: 16,
                       color: AppColors.textHint,
@@ -714,7 +733,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       iconColor: iconColor,
       title: 'وضع المظهر',
       subtitle: subtitle,
-      trailing: const Icon(
+      trailing: Icon(
         Icons.arrow_forward_ios_rounded,
         size: 16,
         color: AppColors.textHint,

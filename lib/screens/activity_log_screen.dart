@@ -413,7 +413,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.access_time_rounded,
                       size: 14,
                       color: AppColors.textHint,
