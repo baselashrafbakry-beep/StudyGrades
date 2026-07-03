@@ -126,8 +126,8 @@ class _GradingScreenState extends State<GradingScreen> {
       backgroundColor: error
           ? AppColors.error
           : success
-          ? AppColors.success
-          : AppColors.primary,
+              ? AppColors.success
+              : AppColors.primary,
       textColor: Colors.white,
       toastLength: Toast.LENGTH_SHORT,
     );
@@ -488,9 +488,7 @@ class _GradingScreenState extends State<GradingScreen> {
                                 ),
                               ),
                               Text(
-                                v == null
-                                    ? '—'
-                                    : '${_fmt(v)} / ${_fmt(f.max)}',
+                                v == null ? '—' : '${_fmt(v)} / ${_fmt(f.max)}',
                                 style: GoogleFonts.cairo(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
@@ -552,7 +550,9 @@ class _GradingScreenState extends State<GradingScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => Navigator.pop(ctx, true),
                         icon: Icon(
-                          isLast ? Icons.flag_rounded : Icons.arrow_back_rounded,
+                          isLast
+                              ? Icons.flag_rounded
+                              : Icons.arrow_back_rounded,
                           size: 18,
                         ),
                         label: Text(
@@ -718,8 +718,7 @@ class _GradingScreenState extends State<GradingScreen> {
       });
       if (mounted) {
         setState(() {
-          _justFilledField =
-              updated.keys.isNotEmpty ? updated.keys.last : null;
+          _justFilledField = updated.keys.isNotEmpty ? updated.keys.last : null;
         });
       }
       _toast('تم رصد ${result.numbers.length} درجة', success: true);
@@ -821,11 +820,24 @@ class _GradingScreenState extends State<GradingScreen> {
 
     // فرض السقف الإداري: إذا عطّل المطور "الوضع الأوفلاين" من إعدادات
     // النظام، لا يُسمح بمتابعة الرصد بدون اتصال إنترنت فعلي (باستثناء
-    // العرض التجريبي الذي لا يعتمد أصلاً على مزامنة حقيقية).
+    // العرض التجريبي الذي لا يعتمد أصلاً على مزامنة حقيقية، وباستثناء
+    // حالة انتهاء القائمة "cur == null" حيث لا يوجد رصد جديد ليُمنع أصلاً
+    // وكل البيانات محفوظة بالفعل بانتظار المزامنة التلقائية).
     final blockedByOfflinePolicy = !_offlineModeAllowedBySystem &&
         !grading.isOnline &&
-        widget.classId != 0;
+        widget.classId != 0 &&
+        cur != null;
     if (blockedByOfflinePolicy) {
+      // إيقاف أي تسجيل/استماع صوتي نشط فوراً لمنع تسريب استخدام الميكروفون
+      // في الخلفية دون علم المستخدم أو تحكمه (مثال: انقطع الاتصال أثناء
+      // التسجيل الصوتي المستمر).
+      if (_autoLoopActive ||
+          voiceService.isListening ||
+          voiceService.isRecording) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _stopAutoLoop(silent: true);
+        });
+      }
       return _buildOfflineBlockedScreen();
     }
 
@@ -917,8 +929,7 @@ class _GradingScreenState extends State<GradingScreen> {
                                     ),
                                   ),
                                 ),
-                                icon: const Icon(
-                                    Icons.analytics_rounded,
+                                icon: const Icon(Icons.analytics_rounded,
                                     size: 18),
                                 label: Text(
                                   'عرض التحليلات',
@@ -929,8 +940,8 @@ class _GradingScreenState extends State<GradingScreen> {
                                   foregroundColor: AppColors.primary,
                                   side: const BorderSide(
                                       color: AppColors.primary),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 13),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 13),
                                 ),
                               ),
                             ),
@@ -938,8 +949,7 @@ class _GradingScreenState extends State<GradingScreen> {
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: _exportExcel,
-                                icon: const Icon(
-                                    Icons.table_chart_rounded,
+                                icon: const Icon(Icons.table_chart_rounded,
                                     size: 18),
                                 label: Text(
                                   'تصدير Excel',
@@ -949,8 +959,8 @@ class _GradingScreenState extends State<GradingScreen> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.success,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 13),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 13),
                                 ),
                               ),
                             ),
@@ -1203,6 +1213,10 @@ class _GradingScreenState extends State<GradingScreen> {
                 const SizedBox(height: 26),
                 ElevatedButton.icon(
                   onPressed: () async {
+                    // إعادة تحميل السياسة الإدارية أيضاً وليس فقط حالة
+                    // الاتصال، حتى تنعكس فوراً أي تعديلات يجريها المطور
+                    // على إعدادات النظام أثناء بقاء المستخدم في هذه الشاشة.
+                    await _loadSystemFeatureFlags();
                     if (mounted) setState(() {});
                   },
                   style: ElevatedButton.styleFrom(
@@ -1468,19 +1482,18 @@ class _GradingScreenState extends State<GradingScreen> {
             _isProcessing
                 ? 'جاري معالجة الصوت...'
                 : isActive
-                ? (_smartMode
-                      ? '🎤 الوضع التلقائي يعمل... قل الدرجة'
-                      : 'استمع... قل الدرجات بالعربية 🎤')
-                : (_smartMode
-                      ? 'اضغط لبدء الرصد التلقائي السريع'
-                      : 'اضغط للبدء بالتسجيل الصوتي'),
+                    ? (_smartMode
+                        ? '🎤 الوضع التلقائي يعمل... قل الدرجة'
+                        : 'استمع... قل الدرجات بالعربية 🎤')
+                    : (_smartMode
+                        ? 'اضغط لبدء الرصد التلقائي السريع'
+                        : 'اضغط للبدء بالتسجيل الصوتي'),
             textAlign: TextAlign.center,
             style: GoogleFonts.cairo(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: isActive
-                  ? AppColors.recordingActive
-                  : AppColors.textPrimary,
+              color:
+                  isActive ? AppColors.recordingActive : AppColors.textPrimary,
             ),
           ),
           if (_transcript.isNotEmpty) ...[
@@ -1544,8 +1557,8 @@ class _GradingScreenState extends State<GradingScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Switch(
-                  value: _useServerTranscription &&
-                      _serverSpeechAllowedBySystem,
+                  value:
+                      _useServerTranscription && _serverSpeechAllowedBySystem,
                   onChanged: !_serverSpeechAllowedBySystem
                       ? null
                       : (v) => setState(() => _useServerTranscription = v),
@@ -1634,8 +1647,7 @@ class _GradingScreenState extends State<GradingScreen> {
                 field: f,
                 value: student.grades[f.name],
                 isHighlighted: isCurrent || isJustFilled,
-                onChanged: (v) =>
-                    g.updateGrade(g.currentIndex, f.name, v),
+                onChanged: (v) => g.updateGrade(g.currentIndex, f.name, v),
               ),
             );
           }),
