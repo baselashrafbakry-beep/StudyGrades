@@ -102,6 +102,43 @@ class AnalyticsService {
     return 'ضعيف';
   }
 
+  /// Splits the inclusive column range `[0, totalCols - 1]` into `n`
+  /// contiguous, non-overlapping sub-ranges of near-equal width.
+  ///
+  /// This replaces a previous `(totalCols / n).floor()` approach that
+  /// produced **zero-width (or even negative/reversed) ranges** whenever
+  /// `totalCols` was small relative to `n` (e.g. a class with 0 or 1
+  /// grading fields, where `totalCols` collapses to 6 or 7 while `n` (the
+  /// number of info/stat pairs) is 4). Reversed/degenerate merge ranges
+  /// silently corrupt the generated `.xlsx` file: `Excel.merge()` does not
+  /// throw, but overlapping merges cause entire cells (and their data —
+  /// class name, subject, teacher name, statistics, etc.) to disappear
+  /// from the exported sheet without any error being raised.
+  ///
+  /// The remainder of `totalCols ~/ n` is distributed one-by-one to the
+  /// first ranges, guaranteeing:
+  ///   - Every range has width >= 1 whenever `totalCols >= n` (always true
+  ///     here, since `totalCols` is never smaller than 6 and `n` is at
+  ///     most 4).
+  ///   - The ranges are contiguous and never overlap.
+  ///   - `sum(widths) == totalCols` exactly (no columns lost or leaked).
+  static List<List<int>> _splitCols(int totalCols, int n) {
+    assert(n > 0, '_splitCols: n must be positive');
+    final safeTotal = totalCols < n ? n : totalCols; // defensive floor
+    final base = safeTotal ~/ n;
+    final remainder = safeTotal % n;
+    final ranges = <List<int>>[];
+    var cursor = 0;
+    for (var i = 0; i < n; i++) {
+      final width = base + (i < remainder ? 1 : 0);
+      final start = cursor;
+      final end = cursor + width - 1;
+      ranges.add([start, end]);
+      cursor += width;
+    }
+    return ranges;
+  }
+
   /// Build a professional Excel file matching the official Egyptian
   /// school grade-tracking sheet format.
   /// على منصة الويب: يُعيد false مع رسالة خطأ واضحة (dart:io غير متاح).
@@ -270,7 +307,8 @@ class AnalyticsService {
           bold: name,
           fontSize: 11,
           fontFamily: getFontFamily(FontFamily.Arial),
-          horizontalAlign: name ? HorizontalAlign.Right : HorizontalAlign.Center,
+          horizontalAlign:
+              name ? HorizontalAlign.Right : HorizontalAlign.Center,
           verticalAlign: VerticalAlign.Center,
           leftBorder: thinB(),
           rightBorder: thinB(),
@@ -284,8 +322,7 @@ class AnalyticsService {
           backgroundColorHex: ExcelColor.fromHexString(
             zebra ? '#F2F2F2' : '#FFFFFF',
           ),
-          fontColorHex:
-              ExcelColor.fromHexString(pass ? '#0B5394' : '#9C0006'),
+          fontColorHex: ExcelColor.fromHexString(pass ? '#0B5394' : '#9C0006'),
           bold: true,
           fontSize: 11,
           fontFamily: getFontFamily(FontFamily.Arial),
@@ -387,6 +424,62 @@ class AnalyticsService {
         bottomBorder: thinB(),
       );
 
+      /// Writes a "label | value" pair into the inclusive column range
+      /// `[startCol, endCol]` of row `row`.
+      ///
+      /// Guarantees ZERO data loss even in the degenerate case where the
+      /// range has width 1 (a single column) — a scenario that used to
+      /// silently drop the value entirely because the previous code always
+      /// assumed a range wide enough to be split into a label-half and a
+      /// value-half. When the range cannot be split, the label and value
+      /// are combined into a single cell ("label: value") instead.
+      void writeLabelValuePair({
+        required int row,
+        required int startCol,
+        required int endCol,
+        required String label,
+        required String value,
+        required CellStyle labelStyle,
+        required CellStyle valueStyle,
+      }) {
+        if (endCol <= startCol) {
+          // Degenerate 1-column range: no room to split label/value into
+          // two merged cells — combine them so nothing is lost.
+          final cell = sheet.cell(
+            CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: row),
+          );
+          cell.value = TextCellValue('$label: $value');
+          cell.cellStyle = valueStyle;
+          return;
+        }
+
+        final labelEndCol = startCol + ((endCol - startCol) ~/ 2);
+
+        sheet.merge(
+          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: row),
+          CellIndex.indexByColumnRow(columnIndex: labelEndCol, rowIndex: row),
+        );
+        final lc = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: row),
+        );
+        lc.value = TextCellValue(label);
+        lc.cellStyle = labelStyle;
+
+        final valueStartCol = labelEndCol + 1;
+        if (valueStartCol < endCol) {
+          sheet.merge(
+            CellIndex.indexByColumnRow(
+                columnIndex: valueStartCol, rowIndex: row),
+            CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: row),
+          );
+        }
+        final vc = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: valueStartCol, rowIndex: row),
+        );
+        vc.value = TextCellValue(value);
+        vc.cellStyle = valueStyle;
+      }
+
       // ======================== Header (school / subtitle) ========================
       var rowIdx = 0;
       sheet.merge(
@@ -408,8 +501,8 @@ class AnalyticsService {
       c = sheet.cell(
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIdx),
       );
-      c.value = TextCellValue(
-          '${AdminService.appName} - ${AdminService.appNameAr}');
+      c.value =
+          TextCellValue('${AdminService.appName} - ${AdminService.appNameAr}');
       c.cellStyle = subTitleStyle;
       sheet.setRowHeight(rowIdx, 22);
       rowIdx++;
@@ -425,36 +518,24 @@ class AnalyticsService {
         ['تاريخ الرصد', dateStr],
       ];
 
-      final pairWidth = (totalCols / infoPairs.length).floor();
+      // FIX (data-loss bug): previously `pairWidth = (totalCols /
+      // infoPairs.length).floor()` collapsed to 1 whenever `totalCols` was
+      // 6 or 7 (i.e. a class with 0 or 1 grading fields), producing
+      // reversed/overlapping merge ranges that silently deleted the
+      // class/subject/teacher info from the exported file. `_splitCols`
+      // guarantees valid, non-overlapping, total-preserving ranges for any
+      // `totalCols >= infoPairs.length` (always true: totalCols >= 6).
+      final infoRanges = _splitCols(totalCols, infoPairs.length);
       for (var i = 0; i < infoPairs.length; i++) {
-        final startCol = i * pairWidth;
-        final endCol = (i == infoPairs.length - 1)
-            ? lastColIndex
-            : startCol + pairWidth - 1;
-        final labelEndCol = startCol + ((endCol - startCol) ~/ 2);
-
-        sheet.merge(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: rowIdx),
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol, rowIndex: rowIdx),
+        writeLabelValuePair(
+          row: rowIdx,
+          startCol: infoRanges[i][0],
+          endCol: infoRanges[i][1],
+          label: infoPairs[i][0],
+          value: infoPairs[i][1],
+          labelStyle: infoLabelStyle,
+          valueStyle: infoValueStyle,
         );
-        var lc = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: rowIdx),
-        );
-        lc.value = TextCellValue(infoPairs[i][0]);
-        lc.cellStyle = infoLabelStyle;
-
-        sheet.merge(
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol + 1, rowIndex: rowIdx),
-          CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: rowIdx),
-        );
-        var vc = sheet.cell(
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol + 1, rowIndex: rowIdx),
-        );
-        vc.value = TextCellValue(infoPairs[i][1]);
-        vc.cellStyle = infoValueStyle;
       }
       sheet.setRowHeight(rowIdx, 24);
       rowIdx++;
@@ -478,16 +559,29 @@ class AnalyticsService {
       g1.value = TextCellValue('بيانات الطالب');
       g1.cellStyle = groupHeaderStyle;
 
-      sheet.merge(
-        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
-        CellIndex.indexByColumnRow(
-            columnIndex: 3 + fieldsCount - 1, rowIndex: groupRow),
-      );
-      var g2 = sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
-      );
-      g2.value = TextCellValue('بنود التقييم');
-      g2.cellStyle = groupHeaderStyle;
+      // FIX (data-loss bug): when `fieldsCount == 0` (a class with no
+      // grading fields configured yet — a real, reachable state), this
+      // range used to be `merge(col: 3, col: 3 + 0 - 1) == merge(col: 3,
+      // col: 2)` — a REVERSED range. The `excel` package does not reject
+      // reversed merge ranges; instead it silently overlaps with the
+      // neighbouring "بيانات الطالب" / "النتيجة النهائية" merges, which
+      // collapses the whole header row into a single cell and erases two
+      // of the three group-header labels from the output with no error
+      // raised. There is no column space at all for a "بنود التقييم"
+      // header when there are zero fields, so we simply skip drawing it —
+      // "بيانات الطالب" and "النتيجة النهائية" remain adjacent and intact.
+      if (fieldsCount > 0) {
+        sheet.merge(
+          CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
+          CellIndex.indexByColumnRow(
+              columnIndex: 3 + fieldsCount - 1, rowIndex: groupRow),
+        );
+        var g2 = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
+        );
+        g2.value = TextCellValue('بنود التقييم');
+        g2.cellStyle = groupHeaderStyle;
+      }
 
       sheet.merge(
         CellIndex.indexByColumnRow(columnIndex: totalCol, rowIndex: groupRow),
@@ -673,34 +767,29 @@ class AnalyticsService {
       for (var i = 0; i < statsItems.length; i += perRow) {
         final r = rowIdx;
         final pairs = statsItems.skip(i).take(perRow).toList();
-        final cellsPerPair = (totalCols / perRow).floor();
+        // FIX (data-loss bug): previously `cellsPerPair = (totalCols /
+        // perRow).floor()` used the FIXED `perRow` constant (4) as the
+        // divisor regardless of `totalCols`. When `totalCols` was 6 or 7
+        // (0/1 grading fields), this floored to 1, producing
+        // reversed/degenerate merge ranges for every pair except the last
+        // — silently deleting up to 6 of the 8 statistics values from the
+        // exported file with no error raised (confirmed via hands-on
+        // testing: only 2 of 8 stats survived at fieldsCount=0).
+        // `_splitCols(totalCols, pairs.length)` distributes the ACTUAL
+        // available columns evenly across the pairs present on this row,
+        // guaranteeing every pair gets a valid, non-empty range.
+        final statRanges = _splitCols(totalCols, pairs.length);
 
         for (var j = 0; j < pairs.length; j++) {
-          final startCol = j * cellsPerPair;
-          final endCol = (j == pairs.length - 1)
-              ? lastColIndex
-              : startCol + cellsPerPair - 1;
-          final mid = startCol + ((endCol - startCol) ~/ 2);
-
-          sheet.merge(
-            CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: r),
-            CellIndex.indexByColumnRow(columnIndex: mid, rowIndex: r),
+          writeLabelValuePair(
+            row: r,
+            startCol: statRanges[j][0],
+            endCol: statRanges[j][1],
+            label: pairs[j][0],
+            value: pairs[j][1],
+            labelStyle: statsLabelStyle,
+            valueStyle: statsValueStyle,
           );
-          var lc = sheet.cell(
-            CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: r),
-          );
-          lc.value = TextCellValue(pairs[j][0]);
-          lc.cellStyle = statsLabelStyle;
-
-          sheet.merge(
-            CellIndex.indexByColumnRow(columnIndex: mid + 1, rowIndex: r),
-            CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: r),
-          );
-          var vc = sheet.cell(
-            CellIndex.indexByColumnRow(columnIndex: mid + 1, rowIndex: r),
-          );
-          vc.value = TextCellValue(pairs[j][1]);
-          vc.cellStyle = statsValueStyle;
         }
         sheet.setRowHeight(r, 22);
         rowIdx++;
@@ -715,15 +804,20 @@ class AnalyticsService {
         'توقيع وكيل المدرسة',
         'توقيع المدير',
       ];
-      final sigWidth = (totalCols / sigPairs.length).floor();
+      // NOTE: mathematically this specific division (totalCols >= 6,
+      // sigPairs.length == 3) can never floor to 0, so the original
+      // `(totalCols / sigPairs.length).floor()` was not exploitable here.
+      // Standardized on `_splitCols` anyway for defense-in-depth and
+      // consistency with the info-row/statistics-block fixes above — this
+      // guarantees correctness even if `totalCols`'s minimum value or
+      // `sigPairs` length ever changes in the future.
+      final sigRanges = _splitCols(totalCols, sigPairs.length);
 
       // Row of empty (signature lines)
       final lineRow = rowIdx;
       for (var i = 0; i < sigPairs.length; i++) {
-        final startCol = i * sigWidth;
-        final endCol = (i == sigPairs.length - 1)
-            ? lastColIndex
-            : startCol + sigWidth - 1;
+        final startCol = sigRanges[i][0];
+        final endCol = sigRanges[i][1];
         sheet.merge(
           CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: lineRow),
           CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: lineRow),
@@ -740,10 +834,8 @@ class AnalyticsService {
       // Row of labels
       final labelRow = rowIdx;
       for (var i = 0; i < sigPairs.length; i++) {
-        final startCol = i * sigWidth;
-        final endCol = (i == sigPairs.length - 1)
-            ? lastColIndex
-            : startCol + sigWidth - 1;
+        final startCol = sigRanges[i][0];
+        final endCol = sigRanges[i][1];
         sheet.merge(
           CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: labelRow),
           CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: labelRow),
@@ -757,7 +849,7 @@ class AnalyticsService {
       sheet.setRowHeight(labelRow, 24);
 
       // ======================== Column widths ========================
-      sheet.setColumnWidth(0, 6);  // #
+      sheet.setColumnWidth(0, 6); // #
       sheet.setColumnWidth(1, 28); // Name
       sheet.setColumnWidth(2, 14); // Number
       for (var i = 0; i < fields.length; i++) {
@@ -853,8 +945,7 @@ class AnalyticsService {
 
       // Mobile/Desktop: حفظ ملف CSV ثم مشاركته
       final dir = await getApplicationDocumentsDirectory();
-      final fileName =
-          'Grades_${_safeName(className)}_${_safeName(subject)}_'
+      final fileName = 'Grades_${_safeName(className)}_${_safeName(subject)}_'
           '${DateTime.now().millisecondsSinceEpoch}.csv';
       final file = File(p.join(dir.path, fileName));
       await file.writeAsString(content);

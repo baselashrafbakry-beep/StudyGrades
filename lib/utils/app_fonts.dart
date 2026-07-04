@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Local-first font helper.
-/// 
+///
 /// Returns a TextStyle that uses the locally bundled Cairo font.
 /// This is critical: it prevents the app from hanging on first launch
 /// trying to download the font from the internet (the original cause

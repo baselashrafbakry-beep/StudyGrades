@@ -57,6 +57,31 @@ class StorageService {
     _cachedPendingCount = trimmed.length; // تحديث الـ cache
   }
 
+  /// يحذف عنصر محدد (طالب+مادة) من قائمة الانتظار بعد نجاح مزامنته.
+  /// إصلاح: يُستخدم بدلاً من `clearPendingSyncs()` عند نجاح حفظ طالب
+  /// واحد فقط، لتفادي حذف عناصر أخرى معلّقة (طلاب/مواد مختلفين) قد
+  /// تكون أُضيفت بالتوازي أثناء انتظار طلب الشبكة لهذا الطالب تحديداً.
+  static Future<void> removePendingSync({
+    required int studentId,
+    required String subject,
+  }) async {
+    final list = getPendingSyncs();
+    final before = list.length;
+    list.removeWhere(
+      (s) => s.studentId == studentId && s.subject == subject,
+    );
+    if (list.length == before) return; // لا شيء للحذف
+    if (list.isEmpty) {
+      await _pendingBox.delete('list');
+    } else {
+      await _pendingBox.put(
+        'list',
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+      );
+    }
+    _cachedPendingCount = list.length;
+  }
+
   static List<PendingSync> getPendingSyncs() {
     final raw = _pendingBox.get('list') as String?;
     if (raw == null || raw.isEmpty) return [];
@@ -90,20 +115,6 @@ class StorageService {
     _cachedPendingCount = 0;
   }
 
-  /// Replace the entire pending list (used when partially syncing).
-  static Future<void> replacePendingSyncs(List<PendingSync> list) async {
-    if (list.isEmpty) {
-      await _pendingBox.delete('list');
-      _cachedPendingCount = 0;
-      return;
-    }
-    await _pendingBox.put(
-      'list',
-      jsonEncode(list.map((e) => e.toJson()).toList()),
-    );
-    _cachedPendingCount = list.length; // تحديث الـ cache
-  }
-
   /// O(1) — يُرجع من الـ cache مباشرةً دون فك ترميز JSON
   static int get pendingCount {
     if (_cachedPendingCount < 0) {
@@ -126,7 +137,8 @@ class StorageService {
   }
 
   // ============ Classroom Cache ============
-  static Future<void> cacheClassroom(String key, Map<String, dynamic> data) async {
+  static Future<void> cacheClassroom(
+      String key, Map<String, dynamic> data) async {
     await _cacheBox.put(key, jsonEncode(data));
   }
 

@@ -127,7 +127,8 @@ class ErrorHandler {
     return false;
   }
 
-  static void _record(Object error, StackTrace? stack, {required String source}) {
+  static void _record(Object error, StackTrace? stack,
+      {required String source}) {
     final entry = LoggedError(
       error: error,
       stack: stack,
@@ -197,8 +198,7 @@ class FriendlyErrorWidget extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline,
-                    color: Colors.white, size: 64),
+                const Icon(Icons.error_outline, color: Colors.white, size: 64),
                 const SizedBox(height: 16),
                 const Text(
                   'حدث خطأ مؤقت',

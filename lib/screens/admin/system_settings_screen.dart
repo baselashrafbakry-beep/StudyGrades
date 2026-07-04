@@ -134,8 +134,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                           icon: Icons.engineering_rounded,
                           color: AppColors.error,
                           title: 'وضع الصيانة',
-                          subtitle:
-                              'إيقاف التطبيق مؤقتاً لجميع المستخدمين',
+                          subtitle: 'إيقاف التطبيق مؤقتاً لجميع المستخدمين',
                           value: _maintenanceMode,
                           onChanged: (v) =>
                               setState(() => _maintenanceMode = v),
@@ -240,8 +239,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_rounded,
-              color: AppColors.warning, size: 22),
+          const Icon(Icons.warning_rounded, color: AppColors.warning, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -433,8 +431,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'تأكيد الحذف',
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold),

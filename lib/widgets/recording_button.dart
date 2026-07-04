@@ -83,19 +83,18 @@ class _RecordingButtonState extends State<RecordingButton>
                   decoration: BoxDecoration(
                     gradient: widget.isRecording
                         ? (widget.isPaused
-                              ? const LinearGradient(
-                                  colors: [Color(0xFFFFB74D), Color(0xFFFB8C00)],
-                                )
-                              : AppColors.recordGradient)
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFFB74D), Color(0xFFFB8C00)],
+                              )
+                            : AppColors.recordGradient)
                         : AppColors.primaryGradient,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            (widget.isRecording
-                                    ? AppColors.recordingActive
-                                    : AppColors.primary)
-                                .withValues(alpha: 0.4),
+                        color: (widget.isRecording
+                                ? AppColors.recordingActive
+                                : AppColors.primary)
+                            .withValues(alpha: 0.4),
                         blurRadius: 20,
                         spreadRadius: 2,
                       ),
@@ -115,8 +114,8 @@ class _RecordingButtonState extends State<RecordingButton>
                       : Icon(
                           widget.isRecording
                               ? (widget.isPaused
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.stop_rounded)
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.stop_rounded)
                               : Icons.mic_rounded,
                           color: Colors.white,
                           size: widget.size * 0.45,

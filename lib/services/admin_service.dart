@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import '../models/user_model.dart';
 import '../utils/error_handler.dart';
+import 'subscription_service.dart';
 
 /// خدمة إدارة المستخدمين والإعدادات الإدارية محلياً
 /// تعمل في وضع Offline بشكل كامل وتُمكّن المطور والمدير من إدارة الحسابات
@@ -259,6 +260,24 @@ class AdminService {
       throw Exception('البريد الإلكتروني مستخدم بالفعل');
     }
 
+    // 🔴 فرض حد "عدد المعلمين" (Seat Limits) بحسب باقة الاشتراك الحالية —
+    // انظر التوثيق الكامل أعلى SubscriptionService.getMaxTeachers().
+    // نحتسب فقط الحسابات النشطة (isActive) ذات دور "معلم" تحديداً —
+    // حسابات المطوّر/المدير/المشرف لا تُستهلَك منها أي "مقعد".
+    if (role == UserRole.teacher) {
+      final maxTeachers = await SubscriptionService.getMaxTeachers();
+      if (maxTeachers != -1) {
+        final activeTeachersCount =
+            users.where((u) => u.role == UserRole.teacher && u.isActive).length;
+        if (activeTeachersCount >= maxTeachers) {
+          throw Exception(
+              'وصلت للحد الأقصى لعدد حسابات المعلمين ($maxTeachers) '
+              'في باقة اشتراكك الحالية.\nقم بترقية الباقة لإضافة معلمين آخرين، '
+              'أو جمّد/احذف حساب معلم غير مستخدَم أولاً.');
+        }
+      }
+    }
+
     final newId = users.isEmpty
         ? 2
         : (users.map((u) => u.id).reduce((a, b) => a > b ? a : b) + 1);
@@ -356,7 +375,29 @@ class AdminService {
     if (user == null) return;
     _ensureOutranks(actorRole, user.role);
 
-    final updated = user.copyWith(isActive: !user.isActive);
+    final willActivate = !user.isActive;
+
+    // 🔴 نفس فرض حد "عدد المعلمين" يجب أن يُطبَّق أيضاً عند *إعادة تفعيل*
+    // حساب معلم مجمَّد سابقاً — وإلا فإن حداً يمنع "الإنشاء" لكنه لا يمنع
+    // "إعادة التفعيل" يبقى قابلاً للالتفاف حوله بسهولة (جمّد حساباً قديماً
+    // ثم أعد تفعيله بلا حدود بدل إنشاء حساب جديد).
+    if (willActivate && user.role == UserRole.teacher) {
+      final maxTeachers = await SubscriptionService.getMaxTeachers();
+      if (maxTeachers != -1) {
+        final users = await getAllUsers();
+        final activeTeachersCount = users
+            .where((u) =>
+                u.role == UserRole.teacher && u.isActive && u.id != user.id)
+            .length;
+        if (activeTeachersCount >= maxTeachers) {
+          throw Exception(
+              'وصلت للحد الأقصى لعدد حسابات المعلمين ($maxTeachers) '
+              'في باقة اشتراكك الحالية.\nقم بترقية الباقة لإعادة تفعيل هذا الحساب.');
+        }
+      }
+    }
+
+    final updated = user.copyWith(isActive: willActivate);
     await _saveUserDirect(updated);
     await logActivity(
       updated.isActive ? 'تفعيل' : 'تجميد',

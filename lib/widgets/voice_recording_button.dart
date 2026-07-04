@@ -132,7 +132,8 @@ class VoiceRecordingButton extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
-              color: isListening ? AppColors.recordingActive : AppColors.primary,
+              color:
+                  isListening ? AppColors.recordingActive : AppColors.primary,
             ),
           ),
         ],

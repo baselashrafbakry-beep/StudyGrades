@@ -94,7 +94,8 @@ void main() {
   group('SubscriptionService.hasFeature — مفتاح غير معروف', () {
     test('يُرجع false افتراضياً لأي اسم ميزة غير معرَّف', () async {
       await setPlan(SubscriptionPlan.school);
-      expect(await SubscriptionService.hasFeature('non_existent_feature'), false);
+      expect(
+          await SubscriptionService.hasFeature('non_existent_feature'), false);
     });
   });
 

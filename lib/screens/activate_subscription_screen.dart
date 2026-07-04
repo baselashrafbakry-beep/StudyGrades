@@ -15,8 +15,7 @@ class ActivateSubscriptionScreen extends StatefulWidget {
       _ActivateSubscriptionScreenState();
 }
 
-class _ActivateSubscriptionScreenState
-    extends State<ActivateSubscriptionScreen>
+class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
     with SingleTickerProviderStateMixin {
   final _codeCtrl = TextEditingController();
   bool _isLoading = false;
@@ -53,6 +52,23 @@ class _ActivateSubscriptionScreenState
   Future<void> _loadCurrentSub() async {
     final sub = await SubscriptionService.getCurrentSubscription();
     if (mounted) setState(() => _currentSub = sub);
+
+    // 🔄 مصالحة (Reconciliation) مع السيرفر — best-effort في الخلفية:
+    // إن كان هناك تحديث وصل عبر Webhook من بوابة الدفع (Paymob) فور
+    // نجاح دفعة إلكترونية للمستخدم، هذا الاستدعاء يجلبه ويُحدِّث الحالة
+    // المحلية دون أي تدخل يدوي من المستخدم (لا يحتاج لإدخال كود إطلاقاً
+    // في حال الدفع الإلكتروني المباشر). لا يؤثر على تدفق تفعيل الأكواد
+    // اليدوية الحالي بأي شكل، ولا يعرض أي خطأ للمستخدم في حال الفشل.
+    final updated = await SubscriptionService.syncWithServer();
+    if (updated && mounted) {
+      final newSub = await SubscriptionService.getCurrentSubscription();
+      setState(() => _currentSub = newSub);
+      Fluttertoast.showToast(
+        msg: 'تم تحديث اشتراكك تلقائياً من السيرفر 🎉',
+        backgroundColor: AppColors.success,
+        textColor: Colors.white,
+      );
+    }
   }
 
   Future<void> _activate() async {
@@ -124,8 +140,8 @@ class _ActivateSubscriptionScreenState
               decoration: BoxDecoration(
                 color: AppColors.success.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: AppColors.success.withValues(alpha: 0.2)),
+                border:
+                    Border.all(color: AppColors.success.withValues(alpha: 0.2)),
               ),
               child: Text(
                 msg,
@@ -402,8 +418,8 @@ class _ActivateSubscriptionScreenState
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(
-                    color: AppColors.primary, width: 2),
+                borderSide:
+                    const BorderSide(color: AppColors.primary, width: 2),
               ),
               errorText: _errorMsg,
               errorStyle: GoogleFonts.cairo(
@@ -510,13 +526,12 @@ class _ActivateSubscriptionScreenState
                   },
             child: Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -585,8 +600,7 @@ class _ActivateSubscriptionScreenState
               );
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: const Color(0xFF25D366).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
@@ -708,8 +722,8 @@ class _ActivateSubscriptionScreenState
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: AppColors.warning.withValues(alpha: 0.4)),
+                border:
+                    Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,

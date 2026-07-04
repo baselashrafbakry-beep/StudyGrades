@@ -37,8 +37,8 @@ class Student {
     Map<String, double>? existingGrades,
     Map<String, double>? grades,
     this.isLocked = false,
-  }) : existingGrades = existingGrades ?? {},
-       grades = grades ?? {};
+  })  : existingGrades = existingGrades ?? {},
+        grades = grades ?? {};
 
   factory Student.fromJson(Map<String, dynamic> json) {
     final existing = <String, double>{};
@@ -50,8 +50,9 @@ class Student {
     }
     return Student(
       id: _toInt(json['id']),
-      studentNumber:
-          json['student_number']?.toString() ?? json['number']?.toString() ?? '',
+      studentNumber: json['student_number']?.toString() ??
+          json['number']?.toString() ??
+          '',
       name: json['name']?.toString() ?? json['full_name']?.toString() ?? '',
       existingGrades: existing,
       grades: Map<String, double>.from(existing),
@@ -68,13 +69,13 @@ class Student {
       grades.values.fold<double>(0, (sum, v) => sum + (v.isFinite ? v : 0));
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'student_number': studentNumber,
-    'name': name,
-    'grades': grades,
-    'existing_grades': existingGrades,
-    'is_locked': isLocked,
-  };
+        'id': id,
+        'student_number': studentNumber,
+        'name': name,
+        'grades': grades,
+        'existing_grades': existingGrades,
+        'is_locked': isLocked,
+      };
 }
 
 class ClassroomData {

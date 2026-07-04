@@ -24,7 +24,8 @@ void main() {
   });
 
   group('Feature Flags — القيم الافتراضية', () {
-    test('كل المفاتيح مفعّلة افتراضياً (true) عند عدم وجود إعداد محفوظ', () async {
+    test('كل المفاتيح مفعّلة افتراضياً (true) عند عدم وجود إعداد محفوظ',
+        () async {
       expect(await AdminService.isServerSpeechEnabled(), true);
       expect(await AdminService.isOfflineModeEnabled(), true);
       expect(await AdminService.isAnalyticsEnabled(), true);
@@ -32,7 +33,8 @@ void main() {
   });
 
   group('Feature Flags — enable_server_speech كسقف حقيقي', () {
-    test('عند تعطيل المفتاح من الإعدادات، تعكسه الدالة المساعدة فوراً', () async {
+    test('عند تعطيل المفتاح من الإعدادات، تعكسه الدالة المساعدة فوراً',
+        () async {
       expect(await AdminService.isServerSpeechEnabled(), true);
       await AdminService.setSystemSetting('enable_server_speech', false);
       expect(await AdminService.isServerSpeechEnabled(), false);
@@ -108,7 +110,8 @@ void main() {
       expect((await AdminService.getAnalyticsCounters()).isEmpty, true);
     });
 
-    test('trackEvent لا يرمي استثناء أبداً حتى لو فشل الوصول للصندوق (أمان كامل)',
+    test(
+        'trackEvent لا يرمي استثناء أبداً حتى لو فشل الوصول للصندوق (أمان كامل)',
         () async {
       // محاكاة استدعاء متكرر سريع للتأكد من عدم تعارض الكتابة (race condition)
       await AdminService.setSystemSetting('enable_analytics', true);

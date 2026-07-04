@@ -33,34 +33,38 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     final totalPossible = fields.fold<double>(0, (s, f) => s + f.max);
 
     // Filter
-    var filtered = allStudents.where((s) {
+    // ملاحظة أداء: نُرفق الفهرس الأصلي (originalIndex) أثناء عملية التصفية
+    // نفسها بدل البحث عنه لاحقاً عبر `allStudents.indexOf(s)` — الأخيرة
+    // بحث خطي O(n) لكل عنصر، ما يجعل العملية الكلية O(n²) لغير داعٍ.
+    // الطريقة الحالية O(n) فقط لكامل القائمة.
+    var filtered = <MapEntry<int, Student>>[];
+    for (var i = 0; i < allStudents.length; i++) {
+      final s = allStudents[i];
       if (_search.isNotEmpty) {
         final q = _search.toLowerCase();
         if (!s.name.toLowerCase().contains(q) &&
             !s.studentNumber.toLowerCase().contains(q)) {
-          return false;
+          continue;
         }
       }
-      switch (_filterMode) {
-        case _FilterMode.all:
-          return true;
-        case _FilterMode.completed:
-          return s.grades.length >= fields.length && fields.isNotEmpty;
-        case _FilterMode.pending:
-          return s.grades.length < fields.length;
-        case _FilterMode.passed:
-          return totalPossible > 0 && s.total >= totalPossible * 0.5;
-        case _FilterMode.failed:
-          return totalPossible > 0 &&
-              s.grades.isNotEmpty &&
-              s.total < totalPossible * 0.5;
+      final matchesFilter = switch (_filterMode) {
+        _FilterMode.all => true,
+        _FilterMode.completed =>
+          s.grades.length >= fields.length && fields.isNotEmpty,
+        _FilterMode.pending => s.grades.length < fields.length,
+        _FilterMode.passed =>
+          totalPossible > 0 && s.total >= totalPossible * 0.5,
+        _FilterMode.failed => totalPossible > 0 &&
+            s.grades.isNotEmpty &&
+            s.total < totalPossible * 0.5,
+      };
+      if (matchesFilter) {
+        filtered.add(MapEntry(i, s));
       }
-    }).toList();
+    }
 
     // Sort
-    final indexed = filtered.map((s) {
-      return MapEntry(allStudents.indexOf(s), s);
-    }).toList();
+    final indexed = filtered;
 
     switch (_sortMode) {
       case _SortMode.original:
@@ -310,8 +314,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         : 0.0;
     final isCurrent = grading.currentIndex == originalIndex;
     final completedFields = student.grades.length;
-    final isCompleted =
-        fields.isNotEmpty && completedFields >= fields.length;
+    final isCompleted = fields.isNotEmpty && completedFields >= fields.length;
 
     final color = !isCompleted
         ? AppColors.textHint

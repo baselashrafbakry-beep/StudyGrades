@@ -133,14 +133,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 duration: const Duration(milliseconds: 250),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: !_yearlyBilling ? AppColors.primary : Colors.transparent,
+                  color:
+                      !_yearlyBilling ? AppColors.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(26),
                 ),
                 child: Text(
                   'شهري',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.cairo(
-                    color: !_yearlyBilling ? Colors.white : AppColors.textSecondary,
+                    color: !_yearlyBilling
+                        ? Colors.white
+                        : AppColors.textSecondary,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -155,7 +158,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 duration: const Duration(milliseconds: 250),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: _yearlyBilling ? AppColors.primary : Colors.transparent,
+                  color:
+                      _yearlyBilling ? AppColors.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(26),
                 ),
                 child: Row(
@@ -164,7 +168,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     Text(
                       'سنوي',
                       style: GoogleFonts.cairo(
-                        color: _yearlyBilling ? Colors.white : AppColors.textSecondary,
+                        color: _yearlyBilling
+                            ? Colors.white
+                            : AppColors.textSecondary,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       ),
@@ -365,7 +371,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       '⚙️ لوحة الإدارة', plan.adminPanel ? '✅' : '❌', color),
                   _buildFeatureRow(
                       '🎯 دعم أولوية', plan.prioritySupport ? '✅' : '❌', color),
-
                   const SizedBox(height: 12),
                   if (plan.plan != SubscriptionPlan.free)
                     SizedBox(
@@ -781,8 +786,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         children: [
           Text(
             label,
-            style: GoogleFonts.cairo(
-                fontWeight: FontWeight.bold, fontSize: 13),
+            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
           ),
           if (value.isNotEmpty) ...[
             const SizedBox(width: 6),

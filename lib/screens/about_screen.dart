@@ -198,8 +198,7 @@ class _AboutScreenState extends State<AboutScreen>
         _infoRow('لغة البرمجة', 'Flutter (Dart)'),
         _infoRow('سنة الإصدار', AdminService.copyrightYear),
         _infoRow('رابط السيرفر', AdminService.serverUrl,
-            copyValue: AdminService.serverUrlFull,
-            copyLabel: 'رابط السيرفر'),
+            copyValue: AdminService.serverUrlFull, copyLabel: 'رابط السيرفر'),
       ],
     );
   }
@@ -334,8 +333,8 @@ class _AboutScreenState extends State<AboutScreen>
                 color: Colors.white.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.copy_rounded,
-                  size: 14, color: Colors.white),
+              child:
+                  const Icon(Icons.copy_rounded, size: 14, color: Colors.white),
             ),
           ],
         ),
@@ -349,7 +348,11 @@ class _AboutScreenState extends State<AboutScreen>
       (Icons.cloud_off_rounded, 'يعمل بدون إنترنت', 'أوفلاين + مزامنة تلقائية'),
       (Icons.analytics_rounded, 'تحليلات ذكية', 'رسوم بيانية + إحصائيات'),
       (Icons.file_download_rounded, 'تصدير متعدد', 'Excel + CSV'),
-      (Icons.admin_panel_settings_rounded, 'صلاحيات متعددة', '4 مستويات: مطور/مدير/مشرف/معلم'),
+      (
+        Icons.admin_panel_settings_rounded,
+        'صلاحيات متعددة',
+        '4 مستويات: مطور/مدير/مشرف/معلم'
+      ),
       (Icons.sync_rounded, 'مزامنة تلقائية', 'offline-first architecture'),
       (Icons.security_rounded, 'تخزين آمن', 'JWT + تشفير محلي'),
       (Icons.school_rounded, 'إدارة شاملة', 'مراحل + فصول + مواد'),
@@ -469,8 +472,18 @@ class _AboutScreenState extends State<AboutScreen>
     final plans = [
       ('مجاني', '0 جنيه', '1 معلم · 30 طالب · 2 فصل', AppColors.success),
       ('أساسي', '49 جنيه/شهر', '50 طالب · 5 فصول · أوفلاين', AppColors.info),
-      ('احترافي', '99 جنيه/شهر', 'غير محدود · Excel · دعم أولوية', AppColors.warning),
-      ('مؤسسي', '2999 جنيه/سنة', 'كل المدرسة · لوحة إدارة كاملة', AppColors.primary),
+      (
+        'احترافي',
+        '99 جنيه/شهر',
+        'غير محدود · Excel · دعم أولوية',
+        AppColors.warning
+      ),
+      (
+        'مؤسسي',
+        '2999 جنيه/سنة',
+        'كل المدرسة · لوحة إدارة كاملة',
+        AppColors.primary
+      ),
     ];
 
     return _Card(
@@ -481,13 +494,12 @@ class _AboutScreenState extends State<AboutScreen>
           .map((p) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: p.$4.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: p.$4.withValues(alpha: 0.2)),
+                    border: Border.all(color: p.$4.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     children: [

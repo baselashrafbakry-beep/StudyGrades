@@ -42,7 +42,9 @@ void main() {
     await box.put('subscription_data', jsonEncode(sub.toJson()));
   }
 
-  group('SubscriptionService.canOpenClass — حد عدد الفصول (maxClassesPerTeacher)', () {
+  group(
+      'SubscriptionService.canOpenClass — حد عدد الفصول (maxClassesPerTeacher)',
+      () {
     test('فصل العرض التجريبي (classId=0) مسموح دائماً بلا قيود', () async {
       await setPlan(SubscriptionPlan.free); // maxClassesPerTeacher = 2
       expect(await SubscriptionService.canOpenClass(0), true);

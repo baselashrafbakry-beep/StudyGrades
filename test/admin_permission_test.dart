@@ -20,7 +20,8 @@ void main() {
   });
 
   group('AdminService — فرض الصلاحيات على مستوى الخدمة (Defense in Depth)', () {
-    test('مدير (admin) لا يستطيع إنشاء حساب برتبة admin أو developer', () async {
+    test('مدير (admin) لا يستطيع إنشاء حساب برتبة admin أو developer',
+        () async {
       await AdminService.initDefaultDeveloper();
       // إنشاء حساب admin بواسطة المطور نفسه
       final adminUser = await AdminService.createUser(
@@ -71,7 +72,8 @@ void main() {
       );
 
       expect(
-        () => AdminService.deleteUser(1, actorId: 99, actorRole: UserRole.teacher),
+        () => AdminService.deleteUser(1,
+            actorId: 99, actorRole: UserRole.teacher),
         throwsA(isA<Exception>()),
       );
     });
@@ -80,12 +82,14 @@ void main() {
       await AdminService.initDefaultDeveloper();
       // محاولة حذف حساب المطور (id=1) بواسطة "مطور" آخر وهمي actorId مختلف
       expect(
-        () => AdminService.deleteUser(1, actorId: 999, actorRole: UserRole.developer),
+        () => AdminService.deleteUser(1,
+            actorId: 999, actorRole: UserRole.developer),
         throwsA(isA<Exception>()),
       );
     });
 
-    test('لا يمكن للمستخدم تعديل/حذف/تجميد حسابه الخاص عبر actorId==targetId', () async {
+    test('لا يمكن للمستخدم تعديل/حذف/تجميد حسابه الخاص عبر actorId==targetId',
+        () async {
       await AdminService.initDefaultDeveloper();
       final admin = await AdminService.createUser(
         username: 'selfadmin',
@@ -96,20 +100,24 @@ void main() {
       );
 
       expect(
-        () => AdminService.deleteUser(admin.id, actorId: admin.id, actorRole: admin.role),
+        () => AdminService.deleteUser(admin.id,
+            actorId: admin.id, actorRole: admin.role),
         throwsA(isA<Exception>()),
       );
       expect(
-        () => AdminService.toggleUserActive(admin.id, actorId: admin.id, actorRole: admin.role),
+        () => AdminService.toggleUserActive(admin.id,
+            actorId: admin.id, actorRole: admin.role),
         throwsA(isA<Exception>()),
       );
       expect(
-        () => AdminService.resetPassword(admin.id, 'newpass1', actorId: admin.id, actorRole: admin.role),
+        () => AdminService.resetPassword(admin.id, 'newpass1',
+            actorId: admin.id, actorRole: admin.role),
         throwsA(isA<Exception>()),
       );
     });
 
-    test('مدير يستطيع بنجاح إدارة حساب معلم (الحالة الطبيعية المسموحة)', () async {
+    test('مدير يستطيع بنجاح إدارة حساب معلم (الحالة الطبيعية المسموحة)',
+        () async {
       await AdminService.initDefaultDeveloper();
       final admin = await AdminService.createUser(
         username: 'goodadmin',
@@ -127,12 +135,14 @@ void main() {
       );
 
       // admin يستطيع تجميد المعلم
-      await AdminService.toggleUserActive(teacher.id, actorId: admin.id, actorRole: admin.role);
+      await AdminService.toggleUserActive(teacher.id,
+          actorId: admin.id, actorRole: admin.role);
       final updated = await AdminService.getUserById(teacher.id);
       expect(updated!.isActive, false);
 
       // admin يستطيع حذف المعلم
-      await AdminService.deleteUser(teacher.id, actorId: admin.id, actorRole: admin.role);
+      await AdminService.deleteUser(teacher.id,
+          actorId: admin.id, actorRole: admin.role);
       expect(await AdminService.getUserById(teacher.id), null);
     });
   });

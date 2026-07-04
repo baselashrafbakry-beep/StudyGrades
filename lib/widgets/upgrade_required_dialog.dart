@@ -82,8 +82,8 @@ class UpgradeRequiredDialog {
                           ),
                         );
                       },
-                      icon: const Icon(Icons.workspace_premium_rounded,
-                          size: 18),
+                      icon:
+                          const Icon(Icons.workspace_premium_rounded, size: 18),
                       label: Text(
                         'ترقية الباقة',
                         style: GoogleFonts.cairo(fontWeight: FontWeight.bold),

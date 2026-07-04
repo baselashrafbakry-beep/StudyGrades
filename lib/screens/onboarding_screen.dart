@@ -212,9 +212,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           AnimatedBuilder(
             animation: _pulseAnim,
             builder: (_, child) => Transform.scale(
-              scale: _currentPage == _pages.indexOf(page)
-                  ? _pulseAnim.value
-                  : 1.0,
+              scale:
+                  _currentPage == _pages.indexOf(page) ? _pulseAnim.value : 1.0,
               child: child,
             ),
             child: TweenAnimationBuilder<double>(

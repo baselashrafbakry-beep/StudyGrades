@@ -62,10 +62,10 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
     final color = !hasValue
         ? AppColors.textHint
         : percent >= 0.7
-        ? AppColors.success
-        : percent >= 0.5
-        ? AppColors.warning
-        : AppColors.error;
+            ? AppColors.success
+            : percent >= 0.5
+                ? AppColors.warning
+                : AppColors.error;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -77,9 +77,8 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
             : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: widget.isHighlighted
-              ? AppColors.primary
-              : Colors.grey.shade200,
+          color:
+              widget.isHighlighted ? AppColors.primary : Colors.grey.shade200,
           width: widget.isHighlighted ? 2 : 1,
         ),
       ),
@@ -127,7 +126,8 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               controller: _ctrl,
               focusNode: _focus,
               textAlign: TextAlign.center,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 // Allow only digits, single decimal point, no negatives.
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),

@@ -10,8 +10,7 @@ class GradientBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        gradient:
-            gradient ??
+        gradient: gradient ??
             const LinearGradient(
               colors: [
                 AppColors.primaryDark,

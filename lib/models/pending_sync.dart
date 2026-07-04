@@ -16,13 +16,13 @@ class PendingSync {
   });
 
   Map<String, dynamic> toJson() => {
-    'student_id': studentId,
-    'student_name': studentName,
-    'grades': grades,
-    'timestamp': timestamp,
-    'class_id': classId,
-    'subject': subject,
-  };
+        'student_id': studentId,
+        'student_name': studentName,
+        'grades': grades,
+        'timestamp': timestamp,
+        'class_id': classId,
+        'subject': subject,
+      };
 
   factory PendingSync.fromJson(Map<String, dynamic> json) {
     final raw = json['grades'] as Map? ?? {};

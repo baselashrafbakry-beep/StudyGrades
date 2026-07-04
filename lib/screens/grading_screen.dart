@@ -799,6 +799,16 @@ class _GradingScreenState extends State<GradingScreen> {
       _toast('لا يوجد طلاب للتصدير', error: true);
       return;
     }
+    // تنبيه المستخدم عند عدم وجود بنود تقييم مُعرَّفة لهذه المادة — لن يظهر
+    // في الملف سوى بيانات الطلاب بدون درجات (متوسط/مجموع = صفر). يُسمح
+    // بالمتابعة (الملف الآن يُصدَّر بشكل سليم دون فقدان بيانات) لكن يجب
+    // إعلام المستخدم لتجنب الالتباس، بنفس النمط المتّبع في _startAutoLoop().
+    if (grading.fields.isEmpty) {
+      _toast(
+        'تنبيه: لا توجد بنود تقييم لهذه المادة — سيتم تصدير كشف بأسماء الطلاب فقط بدون درجات',
+        error: true,
+      );
+    }
     // فرض الاشتراك: تصدير Excel متاح فقط لباقتَي "احترافي" و"مدرسة"
     final allowed = await SubscriptionService.hasFeature('export_excel');
     if (!mounted) return;

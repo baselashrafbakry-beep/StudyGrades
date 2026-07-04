@@ -171,8 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -618,8 +617,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<GradeField> fields,
     ClassStats stats,
   ) {
-    final sorted = [...students]
-      ..sort((a, b) => b.total.compareTo(a.total));
+    final sorted = [...students]..sort((a, b) => b.total.compareTo(a.total));
     final top5 = sorted.take(5).toList();
 
     return Container(
@@ -880,11 +878,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (stats.totalPossible == 0) return const SizedBox();
 
     final passed = students
-        .where((s) =>
-            s.grades.isNotEmpty && s.total >= stats.totalPossible * 0.5)
+        .where(
+            (s) => s.grades.isNotEmpty && s.total >= stats.totalPossible * 0.5)
         .length;
     final failed = students
-        .where((s) => s.grades.isNotEmpty && s.total < stats.totalPossible * 0.5)
+        .where(
+            (s) => s.grades.isNotEmpty && s.total < stats.totalPossible * 0.5)
         .length;
     final notGraded = students.length - passed - failed;
 

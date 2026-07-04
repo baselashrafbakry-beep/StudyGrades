@@ -72,7 +72,8 @@ void main() {
               'ينكسر بسبب هذا التحديث.');
     });
 
-    test('المعرّف المُولَّد ليس فارغاً وبصيغة نصية صالحة للاستخدام كجزء '
+    test(
+        'المعرّف المُولَّد ليس فارغاً وبصيغة نصية صالحة للاستخدام كجزء '
         'من كود ترخيص (Base32-friendly / hex)', () async {
       final id = await SubscriptionService.getDeviceId();
       expect(id, isNotEmpty);

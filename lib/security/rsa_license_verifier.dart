@@ -132,8 +132,8 @@ bool verifyLicenseSignatureWithKey({
   required RSAPublicKey publicKey,
 }) {
   try {
-    final message =
-        buildLicenseMessageBytes(deviceId: deviceId, planCode: planCode, days: days);
+    final message = buildLicenseMessageBytes(
+        deviceId: deviceId, planCode: planCode, days: days);
 
     final signer = PSSSigner(RSAEngine(), SHA256Digest(), SHA256Digest());
     final params = ParametersWithSaltConfiguration(

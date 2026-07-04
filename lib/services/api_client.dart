@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show File;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user_model.dart';
@@ -92,6 +92,35 @@ class ApiClient {
   late final Dio _dio;
   Future<String?>? _refreshFuture;
 
+  /// Dio مستقل ومُعاد استخدامه لطلب تجديد التوكن تحديداً (بدل إنشاء
+  /// `Dio()` جديد في كل استدعاء لـ `_refreshAccessToken()` — تحسين أداء
+  /// بسيط بالإضافة إلى جعله قابلاً للحقن في الاختبارات، انظر
+  /// `debugSetHttpClientAdapter` أدناه).
+  late final Dio _refreshDio = Dio();
+
+  /// نقطة حَقن للاختبار فقط — تسمح باستبدال الـ HttpClientAdapter الحقيقي
+  /// (الذي يُجري اتصال شبكة فعلياً) بمحاكٍ (fake) حتمي داخل `flutter test`،
+  /// لاختبار سيناريوهات دقيقة (رفض 401/403 نهائي مقابل انقطاع شبكة مؤقت
+  /// أثناء تجديد التوكن) دون أي اتصال حقيقي بخادم الإنتاج. لا تأثير على
+  /// كود الإنتاج الفعلي بتاتاً (لا يُستدعى إلا صراحةً من كود الاختبار).
+  /// يستبدل الـ adapter في كلا عميلَي Dio الداخليين (`_dio` للطلبات
+  /// العادية و`_refreshDio` الخاص بتجديد التوكن).
+  @visibleForTesting
+  void debugSetHttpClientAdapter(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+    _refreshDio.httpClientAdapter = adapter;
+  }
+
+  /// نقطة حَقن للاختبار فقط — تتيح فحص/تمهيد التوكنات المخزَّنة مباشرةً.
+  @visibleForTesting
+  Future<void> debugSeedTokens({
+    required String access,
+    required String refresh,
+  }) async {
+    await _SafeStorage.write(key: _accessKey, value: access);
+    await _SafeStorage.write(key: _refreshKey, value: refresh);
+  }
+
   ApiClient() {
     _dio = Dio(
       BaseOptions(
@@ -127,9 +156,23 @@ class ApiClient {
                 final cloneResp = await _dio.fetch(opts);
                 return handler.resolve(cloneResp);
               }
+              // newToken == null: _refreshAccessToken() نفسها تكفّلت
+              // بمسح التوكنات إن كان الرفض نهائياً (401/403)، أو تركتها
+              // سليمة إن كان الفشل مؤقتاً بسبب انقطاع الشبكة — لا حاجة
+              // لأي إجراء إضافي هنا.
+            } on DioException catch (err, st) {
+              // فشلت *إعادة* الطلب نفسها بعد نجاح تجديد التوكن — لا
+              // نمسح الجلسة إلا إذا كان الرفض من نوع مصادقة قاطع
+              // (401/403) فعلاً؛ أي فشل آخر (timeout/connectionError
+              // أثناء إعادة المحاولة) يجب ألا يُفقِد المستخدم جلسته
+              // الصالحة فعلياً بسبب انقطاع شبكة عابر.
+              ErrorHandler.logError(err, st, 'ApiClient.refreshRetry');
+              final code = err.response?.statusCode;
+              if (code == 401 || code == 403) {
+                await clearTokens();
+              }
             } catch (err, st) {
               ErrorHandler.logError(err, st, 'ApiClient.refreshRetry');
-              await clearTokens();
             }
           }
           handler.next(e);
@@ -138,13 +181,45 @@ class ApiClient {
     );
   }
 
+  // 🔴 إصلاح ثغرة "الجلسة الزومبي" (Zombie Session Bug — اكتُشفت أثناء
+  // تدقيق Pillar 3 لوضع عدم الاتصال والمزامنة التلقائية):
+  //
+  // كانت `_refreshAccessToken()` تُعامل نوعين مختلفين تماماً من الفشل
+  // بنفس الطريقة (مجرد `return null` صامت دون أي تمييز):
+  //   1) فشل *مؤقت* بسبب انقطاع الشبكة (DioExceptionType.connectionError/
+  //      timeout) — هنا التوكن قد يكون لا يزال صالحاً فعلياً، والمطلوب
+  //      الحفاظ عليه لإعادة المحاولة عند عودة الاتصال (سلوك أوفلاين سليم).
+  //   2) رفض *نهائي وقاطع* من السيرفر (401/403 على مسار التجديد نفسه)
+  //      يعني أن الـ refresh token نفسه أصبح غير صالح تماماً (انتهت
+  //      صلاحيته، أو أُبطل يدوياً بعد تغيير كلمة المرور من جهاز آخر، أو
+  //      أُلغي الحساب) — لا فائدة إطلاقاً من الاحتفاظ بالـ access token
+  //      القديم في هذه الحالة.
+  //
+  // المشكلة: في كلا الحالتين كانت الدالة تُرجع `null` فقط دون مسح أي
+  // توكنات، والـ interceptor في `onError` لا يستدعي `clearTokens()` إلا
+  // إذا فشلت *إعادة* الطلب بعد نجاح التجديد (سيناريو نادر جداً) — أي أن
+  // `clearTokens()` لم تكن تُستدعى إطلاقاً عند الرفض النهائي الحقيقي.
+  // النتيجة: `isAuthenticated()` يستمر بإرجاع `true` إلى الأبد (access
+  // token القديم لا يزال مخزَّناً)، فيظن `AuthProvider`/`GradingProvider`
+  // أن المستخدم لا يزال مسجَّلاً دخوله بصلاحية سليمة، بينما كل طلب
+  // شبكة فعلي (بما فيها `syncGrades` التلقائية عند عودة الاتصال) يفشل
+  // بصمت للأبد بلا أي مسار تعافٍ — "جلسة زومبي" لا تعمل ولا تُكتَشف.
+  //
+  // ✅ الإصلاح: نلتقط `DioException` تحديداً ونميّز صراحةً:
+  //   • رفض نهائي (401/403 من مسار /token/refresh/ نفسه) → نمسح كل
+  //     التوكنات فوراً (`clearTokens()`) لإجبار حالة "غير مسجَّل دخول"
+  //     الصحيحة، بحيث تكتشفها الشاشات التي تراقب `AuthProvider` وتُعيد
+  //     توجيه المستخدم لتسجيل الدخول من جديد بدل البقاء في حالة زومبي.
+  //   • أي فشل آخر (شبكة/timeout/انقطاع اتصال) → لا نمسح شيئاً إطلاقاً؛
+  //     نُبقي التوكنات كما هي تماماً لإتاحة إعادة المحاولة تلقائياً حال
+  //     عودة الاتصال، طبقاً لمتطلب "المزامنة التلقائية عند عودة الاتصال".
   Future<String?> _refreshAccessToken() async {
     if (_refreshFuture != null) return _refreshFuture;
     _refreshFuture = (() async {
       try {
         final refresh = await _SafeStorage.read(key: _refreshKey);
         if (refresh == null || refresh.isEmpty) return null;
-        final resp = await Dio().post(
+        final resp = await _refreshDio.post(
           '$baseUrl/token/refresh/',
           data: {'refresh': refresh},
           options: Options(headers: {'Content-Type': 'application/json'}),
@@ -154,6 +229,18 @@ class ApiClient {
           await _SafeStorage.write(key: _accessKey, value: newAccess);
           return newAccess;
         }
+      } on DioException catch (e, st) {
+        ErrorHandler.logError(e, st, 'ApiClient.refreshAccessToken');
+        final code = e.response?.statusCode;
+        final isDefiniteRejection = code == 401 || code == 403;
+        if (isDefiniteRejection) {
+          // الـ refresh token نفسه مرفوض نهائياً من السيرفر — لا فائدة
+          // من الاحتفاظ بأي توكن قديم، امسح الجلسة بالكامل فوراً.
+          await clearTokens();
+        }
+        // أي نوع آخر (timeout/connectionError/عدم اتصال) → لا نمسح شيئاً،
+        // نترك التوكنات سليمة لإعادة المحاولة عند عودة الاتصال.
+        return null;
       } catch (e, st) {
         ErrorHandler.logError(e, st, 'ApiClient.refreshAccessToken');
         return null;
@@ -181,8 +268,7 @@ class ApiClient {
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout ||
             e.type == DioExceptionType.connectionError ||
-            (e.response?.statusCode != null &&
-                e.response!.statusCode! >= 500);
+            (e.response?.statusCode != null && e.response!.statusCode! >= 500);
         if (!transient || attempt >= maxAttempts) rethrow;
         await Future.delayed(baseDelay * attempt);
       }
@@ -191,8 +277,7 @@ class ApiClient {
 
   // ============ AUTH ============
 
-  Future<Map<String, dynamic>> login(
-      String username, String password) async {
+  Future<Map<String, dynamic>> login(String username, String password) async {
     Response? resp;
     final endpoints = ['/token/', '/login/', '/auth/login/'];
     DioException? lastErr;
@@ -206,8 +291,7 @@ class ApiClient {
         break;
       } on DioException catch (e) {
         lastErr = e;
-        if (e.response?.statusCode == 401 ||
-            e.response?.statusCode == 400) {
+        if (e.response?.statusCode == 401 || e.response?.statusCode == 400) {
           throw _formatError(e);
         }
         // 404/405 → جرّب endpoint التالي
@@ -332,6 +416,111 @@ class ApiClient {
     final r = resp.data;
     if (r is Map) return Map<String, dynamic>.from(r);
     return {};
+  }
+
+  // ============ SUBSCRIPTION STATUS (Paymob-aware) ============
+
+  /// يجلب حالة الاشتراك "الرسمية" من السيرفر — يُستخدَم للمصالحة
+  /// (Reconciliation) بين حالة الاشتراك المحلية (المبنية على أكواد
+  /// RSA اليدوية) وأي تحديث فوري وصل عبر Webhook من بوابة الدفع
+  /// (Paymob) مباشرةً إلى السيرفر دون المرور بالتطبيق إطلاقاً.
+  ///
+  /// العقد المتوقَّع من الـ endpoint `/subscription/status/` (GET، يتطلب
+  /// JWT صالح — نفس آلية المصادقة المستخدمة في بقية الـ API):
+  /// ```json
+  /// {
+  ///   "plan": "pro",            // free | basic | pro | school
+  ///   "is_active": true,
+  ///   "is_trial": false,
+  ///   "expiry_date": "2026-03-01T00:00:00Z",  // أو null لاشتراك دائم
+  ///   "start_date": "2026-02-01T00:00:00Z"
+  /// }
+  /// ```
+  /// يُعيد null بأمان (بدل رمي استثناء) عند أي فشل في الاتصال أو صيغة
+  /// غير متوقعة — هذا المسار "تحسيني" فقط (Best-effort)، ولا يجب أبداً
+  /// أن يمنع التطبيق من العمل بحالة الاشتراك المحلية الموجودة أصلاً في
+  /// حال تعذّر الوصول للسيرفر (أونلاين متقطع، السيرفر متوقف مؤقتاً...).
+  Future<Map<String, dynamic>?> getSubscriptionStatus() async {
+    try {
+      final resp = await _dio.get('/subscription/status/');
+      final data = resp.data;
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return null;
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ApiClient.getSubscriptionStatus');
+      return null;
+    }
+  }
+
+  // ============ ACTIVATION CODE REDEMPTION REGISTRY ============
+  //
+  // 🔴 ثغرة تجارية جسيمة تم اكتشافها أثناء تدقيق Pillar 2 (أخطر من مجرد
+  // إساءة استخدام كود تجربة مجانية): تتبع "الأكواد المُستخدَمة" بالكامل
+  // (`used_activation_codes` في SubscriptionService) يعيش فقط داخل
+  // SharedPreferences المحلية — وهي تُمسَح بالكامل عند حذف التطبيق
+  // وإعادة تثبيته. في المقابل، معرّف الجهاز (`getDeviceId()`، المبني على
+  // ANDROID_ID الثابت) **يبقى كما هو** عبر إعادة التثبيت. النتيجة: أي
+  // كود — سواء كان كود تجربة مجانية أو حتى **كود RSA مدفوع حقيقي اشتراه
+  // العميل فعلياً** — يمكن إعادة "تفعيله" إلى ما لا نهاية بمجرد حذف
+  // التطبيق وإعادة تثبيته في كل مرة يقترب فيها من الانتهاء، دون أي دفعة
+  // إضافية حقيقية.
+  //
+  // ✅ الإصلاح (Best-Effort Server-Side Registry): بما أن التطبيق مصمَّم
+  // ليعمل بكامل وظائفه في وضع أوفلاين تام (بما في ذلك تفعيل كود مدفوع
+  // لأول مرة لدى معلم في منطقة بلا إنترنت لحظة التفعيل)، لا يصح جعل
+  // التحقق من السيرفر شرطاً إلزامياً يمنع التفعيل بالكامل. بدلاً من ذلك:
+  // يُسجَّل كل استخدام كود على السيرفر (best-effort) بربط
+  // hash(code) ⇄ device_id، ويُرفَض فقط إذا كان السيرفر متصلاً *وأكد
+  // صراحةً* أن نفس الكود سبق استخدامه من جهاز *آخر* مختلف تماماً. لو
+  // تعذّر الوصول للسيرفر إطلاقاً (أوفلاين حقيقي)، يُكمَل التفعيل بالاعتماد
+  // على الفحص المحلي القديم كما هو (سلوك متدرِّج/Graceful Degradation —
+  // لا يتراجع أبداً عن أي قدرة أوفلاين موجودة مسبقاً).
+  //
+  // العقد المتوقَّع من `/subscription/redeem/` (POST، JWT اختياري — يمكن
+  // أن يعمل بدون تسجيل دخول لأن أكواد التفعيل مستقلة عن حساب المستخدم):
+  //   Request:  { "code_hash": "<sha256>", "device_id": "<ANDROID_ID>" }
+  //   Response 200: { "status": "ok" }                — مسموح (جهاز جديد
+  //                                                      لهذا الكود، أو
+  //                                                      نفس الجهاز يُعيد
+  //                                                      إرسال نفس الطلب)
+  //   Response 200/409: { "status": "already_used" }  — مرفوض: الكود
+  //                                                      مُسجَّل بالفعل
+  //                                                      لجهاز آخر مختلف
+  //
+  /// يُسجِّل (best-effort) استخدام كود تفعيل مرتبطاً بمعرّف جهاز معيّن.
+  ///
+  /// يُعيد:
+  ///  - `true`  إذا أكّد السيرفر أن هذا الاستخدام مسموح (جهاز جديد لهذا
+  ///    الكود، أو نفس الجهاز الذي استخدمه سابقاً).
+  ///  - `false` إذا أكّد السيرفر صراحةً أن الكود مُستخدَم بالفعل من جهاز
+  ///    *آخر* — رفض قاطع وواضح.
+  ///  - `null`  إذا تعذّر الوصول للسيرفر بالكامل (بلا إنترنت، أو السيرفر
+  ///    متوقف) — يعني "غير معروف"، والمُستدعي يجب أن يعتمد حينها على أي
+  ///    فحص محلي احتياطي متاح (Graceful Degradation، وليس رفضاً تلقائياً).
+  Future<bool?> redeemActivationCode({
+    required String codeHash,
+    required String deviceId,
+  }) async {
+    try {
+      final resp = await _dio.post(
+        '/subscription/redeem/',
+        data: {'code_hash': codeHash, 'device_id': deviceId},
+      );
+      final data = resp.data;
+      if (data is Map && data['status'] == 'already_used') return false;
+      return true;
+    } on DioException catch (e, st) {
+      // 409 Conflict صريح من السيرفر = مرفوض بشكل قاطع (وليس فشل اتصال)
+      if (e.response?.statusCode == 409) return false;
+      final data = e.response?.data;
+      if (data is Map && data['status'] == 'already_used') return false;
+      // أي خطأ اتصال آخر (Timeout/DNS/عدم توفر السيرفر) = "غير معروف"
+      ErrorHandler.logError(e, st, 'ApiClient.redeemActivationCode');
+      return null;
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'ApiClient.redeemActivationCode');
+      return null;
+    }
   }
 
   // ============ VOICE TRANSCRIBE ============

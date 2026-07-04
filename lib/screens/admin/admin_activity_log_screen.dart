@@ -123,8 +123,8 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black
-                                          .withValues(alpha: 0.03),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.03),
                                       blurRadius: 6,
                                     ),
                                   ],
@@ -135,10 +135,8 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                       width: 40,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color:
-                                            color.withValues(alpha: 0.13),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
+                                        color: color.withValues(alpha: 0.13),
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Icon(_typeIcon(type),
                                           color: color, size: 20),
@@ -151,21 +149,19 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                         children: [
                                           Row(
                                             mainAxisAlignment:
-                                                MainAxisAlignment
-                                                    .spaceBetween,
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
                                               if (ts != null)
                                                 Text(
                                                   df.format(ts),
                                                   style: GoogleFonts.cairo(
                                                     fontSize: 10,
-                                                    color: AppColors
-                                                        .textHint,
+                                                    color: AppColors.textHint,
                                                   ),
                                                 ),
                                               Container(
-                                                padding: const EdgeInsets
-                                                    .symmetric(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
                                                   horizontal: 8,
                                                   vertical: 2,
                                                 ),
@@ -173,15 +169,13 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                                   color: color.withValues(
                                                       alpha: 0.13),
                                                   borderRadius:
-                                                      BorderRadius.circular(
-                                                          6),
+                                                      BorderRadius.circular(6),
                                                 ),
                                                 child: Text(
                                                   type,
                                                   style: GoogleFonts.cairo(
                                                     fontSize: 10,
-                                                    fontWeight:
-                                                        FontWeight.bold,
+                                                    fontWeight: FontWeight.bold,
                                                     color: color,
                                                   ),
                                                 ),
@@ -194,8 +188,7 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                             textAlign: TextAlign.right,
                                             style: GoogleFonts.cairo(
                                               fontSize: 12,
-                                              color:
-                                                  AppColors.textPrimary,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ],

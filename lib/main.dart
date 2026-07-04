@@ -11,6 +11,7 @@ import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/admin_service.dart';
 import 'services/connectivity_service.dart';
+import 'services/subscription_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/error_handler.dart';
 
@@ -67,9 +68,7 @@ void main() async {
 
     // 8. تهيئة خدمة الاتصال
     try {
-      await connectivityService
-          .init()
-          .timeout(const Duration(seconds: 3));
+      await connectivityService.init().timeout(const Duration(seconds: 3));
     } catch (e, s) {
       ErrorHandler.logError(e, s, 'ConnectivityService.init');
     }
@@ -81,6 +80,19 @@ void main() async {
     } catch (e, s) {
       ErrorHandler.logError(e, s, 'AdminService.initDefaultDeveloper');
     }
+
+    // 9.5. مصالحة حالة الاشتراك مع السيرفر (Paymob Webhook Reconciliation)
+    // — عملية خلفية غير حاجبة (Fire-and-forget) عمداً: لا تُنتظَر (لا
+    // await على مستوى runApp) ولا تُدرَج ضمن أي timeout يُعطِّل الإقلاع،
+    // لأن التطبيق يجب أن يعمل بكامله من حالة الاشتراك المحلية فوراً حتى
+    // لو كان الجهاز أوفلاين تماماً عند الفتح. أي تحديث فوري وصل عبر
+    // Webhook (دفع ناجح عبر Paymob) سيُطبَّق بمجرد نجاح هذا الاستدعاء في
+    // الخلفية دون أي تجميد لواجهة splash/الشاشة الرئيسية.
+    // ignore: unawaited_futures
+    SubscriptionService.syncWithServer().catchError((e, s) {
+      ErrorHandler.logError(e, s, 'main.syncWithServer');
+      return false;
+    });
 
     // 10. تخصيص widget الخطأ المرئي
     ErrorWidget.builder = (FlutterErrorDetails details) {
@@ -105,8 +117,7 @@ Future<void> _initStorageSafe() async {
   const maxRetries = 2;
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      await _initStorage()
-          .timeout(const Duration(seconds: 5));
+      await _initStorage().timeout(const Duration(seconds: 5));
       return;
     } catch (e) {
       if (attempt == maxRetries) rethrow;

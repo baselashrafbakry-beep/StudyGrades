@@ -246,11 +246,11 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 1.05,
-                          ),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.05,
+                      ),
                       itemCount: _subjects.length,
                       itemBuilder: (_, i) {
                         final s = _subjects[i];

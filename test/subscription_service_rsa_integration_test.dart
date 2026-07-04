@@ -42,9 +42,8 @@ void main() {
         reason: 'أداة توليد الترخيص الخارجية يجب أن تنجح: ${result.stderr}');
 
     final output = result.stdout as String;
-    final codeLine = output
-        .split('\n')
-        .firstWhere((l) => l.trim().startsWith('SGV2-'));
+    final codeLine =
+        output.split('\n').firstWhere((l) => l.trim().startsWith('SGV2-'));
     final code = codeLine.trim();
 
     final activation = await SubscriptionService.activateCode(code);
@@ -60,8 +59,7 @@ void main() {
 
   test(
       '🔴 كود مُوقَّع فعلياً بواسطة أداة Python لكن لجهاز مختلف تماماً '
-      'يُرفَض (يثبت أن ربط الجهاز يعمل فعلياً في المسار الإنتاجي)',
-      () async {
+      'يُرفَض (يثبت أن ربط الجهاز يعمل فعلياً في المسار الإنتاجي)', () async {
     // نولّد كوداً صحيحاً تماماً... لكن لجهاز عشوائي آخر غير هذا الجهاز
     final result = await Process.run('python3', [
       '/home/user/dev_tools/generate_license.py',
@@ -75,16 +73,14 @@ void main() {
     expect(result.exitCode, 0);
 
     final output = result.stdout as String;
-    final codeLine = output
-        .split('\n')
-        .firstWhere((l) => l.trim().startsWith('SGV2-'));
+    final codeLine =
+        output.split('\n').firstWhere((l) => l.trim().startsWith('SGV2-'));
     final code = codeLine.trim();
 
     final activation = await SubscriptionService.activateCode(code);
 
     expect(activation.isSuccess, false,
-        reason:
-            'الكود صحيح رقمياً لكنه صادر لجهاز آخر، ويجب أن يُرفَض هنا');
+        reason: 'الكود صحيح رقمياً لكنه صادر لجهاز آخر، ويجب أن يُرفَض هنا');
   });
 
   test(

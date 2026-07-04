@@ -52,8 +52,7 @@ class _SplashScreenState extends State<SplashScreen>
     _textSlide = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _textCtrl, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(parent: _textCtrl, curve: Curves.easeOutCubic));
 
     _logoCtrl.forward();
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -101,9 +100,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     bool isAuth = false;
     try {
-      await auth
-          .restoreSession()
-          .timeout(const Duration(milliseconds: 2500));
+      await auth.restoreSession().timeout(const Duration(milliseconds: 2500));
       isAuth = auth.isAuthenticated;
     } catch (e) {
       if (kDebugMode) debugPrint('[SPLASH] ⚠️ Session restoration failed: $e');
@@ -130,8 +127,7 @@ class _SplashScreenState extends State<SplashScreen>
       maintenanceMode = await AdminService.getSystemSetting<bool>(
             'maintenance_mode',
             defaultValue: false,
-          )
-              .timeout(const Duration(milliseconds: 800)) ??
+          ).timeout(const Duration(milliseconds: 800)) ??
           false;
     } catch (e) {
       if (kDebugMode) debugPrint('[SPLASH] ⚠️ Maintenance check failed: $e');
@@ -303,8 +299,7 @@ class _SplashScreenState extends State<SplashScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color:
-                              Colors.white.withValues(alpha: opacity * 0.6),
+                          color: Colors.white.withValues(alpha: opacity * 0.6),
                           width: 2,
                         ),
                       ),
@@ -365,8 +360,7 @@ class _SplashScreenState extends State<SplashScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(3, (i) {
             final t = (_waveCtrl.value + (i * 0.2)) % 1.0;
-            final scale =
-                0.6 + (math.sin(t * math.pi * 2) * 0.5 + 0.5) * 0.5;
+            final scale = 0.6 + (math.sin(t * math.pi * 2) * 0.5 + 0.5) * 0.5;
             return Container(
               width: 12,
               height: 12,
@@ -376,8 +370,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white
-                        .withValues(alpha: 0.3 + scale * 0.5),
+                    color: Colors.white.withValues(alpha: 0.3 + scale * 0.5),
                   ),
                 ),
               ),

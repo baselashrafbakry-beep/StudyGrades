@@ -2,13 +2,14 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_id/android_id.dart';
 import '../models/subscription_model.dart';
 import '../utils/error_handler.dart';
 import '../security/rsa_license_verifier.dart';
+import 'api_client.dart';
 
 /// --------------------------------------------------------------------------
 /// خدمة نظام الاشتراكات — تفعيل بكود + حفظ محلي
@@ -49,6 +50,95 @@ class SubscriptionService {
   static const _boxKey = 'subscription_data';
   static const _prefKey = 'user_subscription';
   static const _deviceIdKey = 'device_license_id';
+  static const _lastSeenTimeKey = 'subscription_last_seen_epoch_ms';
+
+  // ────────────────────────────────────────────────────────────────
+  // نقطة حَقن للاختبار فقط (Testability Seam) — بنفس نمط
+  // `GradingProvider.debugSyncOverride` المُستخدَم في بقية المشروع.
+  // تبقى null دائماً في كود الإنتاج (فيُستخدَم `apiClient.
+  // getSubscriptionStatus()` الحقيقي كما هو)، وتُستخدَم فقط في
+  // `test/subscription_sync_with_server_test.dart` للتحكم الحتمي في
+  // استجابة "السيرفر" دون أي اتصال شبكة فعلي أو حاجة لتشغيل Dio/
+  // dio_adapter وهمي.
+  // ────────────────────────────────────────────────────────────────
+  @visibleForTesting
+  static Future<Map<String, dynamic>?> Function()? debugServerFetchOverride;
+
+  /// نقطة حَقن للاختبار فقط لـ `apiClient.redeemActivationCode()` — انظر
+  /// التوثيق الكامل أعلى تلك الدالة في `api_client.dart` لفهم سياسة
+  /// "تسجيل الاستخدام على السيرفر" التي صُمِّمت لمنع إعادة استخدام نفس
+  /// كود الاشتراك (تجريبي أو مدفوع) عبر حذف التطبيق وإعادة تثبيته.
+  @visibleForTesting
+  static Future<bool?> Function({
+    required String codeHash,
+    required String deviceId,
+  })? debugRedeemOverride;
+
+  // ======================================================================
+  // 🔴 تحصين ضد التلاعب بساعة الجهاز (Clock Manipulation) — ثغرة تجارية
+  // جسيمة أخرى تم اكتشافها أثناء تدقيق Pillar 2:
+  //
+  // كل منطق انتهاء الاشتراك في هذا الملف (وفي `UserSubscription.isExpired`
+  // / `isExpiringSoon` في subscription_model.dart) كان يعتمد حصرياً على
+  // `DateTime.now()` الخام القادم من ساعة نظام التشغيل. على أندرويد، أي
+  // مستخدم عادي (بدون أي صلاحيات جذر/root) يمكنه فتح "الإعدادات ← التاريخ
+  // والوقت" وإرجاع ساعة الجهاز يدوياً إلى تاريخ في الماضي في كل مرة يقترب
+  // فيها اشتراكه (تجريبي أو **مدفوع حقيقي عبر كود RSA**) من الانتهاء، ثم
+  // إعادتها لاحقاً — وبذلك يبقى `expiryDate.isAfter(DateTime.now())` صحيحاً
+  // إلى الأبد رغم انتهاء المدة الفعلية الحقيقية. هذا تسريب إيرادات مباشر
+  // بنفس خطورة ثغرة "إعادة التثبيت" التي أُصلحت أعلاه، وأسهل تنفيذاً من
+  // قِبل أي مستخدم عادي (لا يتطلب حذف التطبيق، فقط تغيير إعداد نظام).
+  //
+  // ✅ الإصلاح (Monotonic Time Ratchet — "مزلاج زمني أحادي الاتجاه"):
+  // نخزّن محلياً (SharedPreferences) أكبر توقيت (epoch ms) شوهد فعلياً على
+  // هذا الجهاز حتى الآن. كل مرة يُطلَب فيها "الوقت الحالي لأغراض ترخيص
+  // الاشتراك" عبر `_licenseNow()`، نقارن `DateTime.now()` الفعلي بهذه
+  // القيمة المخزَّنة ونُعيد **الأكبر بينهما**، ثم نُحدِّث التخزين فوراً إلى
+  // هذه القيمة الجديدة. النتيجة: هذا "الوقت المُرخَّص" لا يمكن أن يتراجع
+  // إلى الخلف أبداً بغضّ النظر عمّا تفعله ساعة النظام — فإرجاع الساعة للخلف
+  // يجعل `DateTime.now()` أصغر من آخر قيمة محفوظة، فتُتجاهَل تلقائياً
+  // ويُستخدَم آخر وقت "حقيقي" معروف بدلاً منه. تقديم الساعة للأمام (بلا أي
+  // فائدة للمستخدم في هذا السياق) يُحدِّث المزلاج بأمان كالمعتاد.
+  //
+  // ملاحظة أمانة: هذا الحل **best-effort محلي بحت** (لا يعتمد على أي خادم
+  // وقت خارجي)، وهو كافٍ تماماً لمنع سيناريو "إرجاع الساعة للخلف" الشائع
+  // والسهل التنفيذ، لكنه لا يمنع نظرياً مستخدماً متقدماً جداً يُعيد أيضاً
+  // ضبط التطبيق لحالة تثبيت جديدة تماماً (SharedPreferences فارغة) في نفس
+  // اللحظة — وهذه الحالة الأخيرة مغطاة بشكل منفصل عبر "سجل الاستخدام على
+  // السيرفر" (`redeemActivationCode`) أعلاه لأي كود مدفوع فعلياً، طالما
+  // الجهاز متصل بالإنترنت ولو لمرة واحدة بعد إعادة التثبيت.
+  // ======================================================================
+
+  /// نقطة حَقن للاختبار فقط: تسمح بتثبيت "ساعة نظام" وهمية بدل
+  /// `DateTime.now()` الحقيقية، للتحقق الحتمي من سلوك المزلاج الزمني دون
+  /// انتظار زمن حقيقي أو التلاعب بساعة نظام التشغيل الفعلية أثناء الاختبار.
+  @visibleForTesting
+  static DateTime Function()? debugClockOverride;
+
+  static DateTime _systemNow() =>
+      debugClockOverride != null ? debugClockOverride!() : DateTime.now();
+
+  /// يُعيد "الوقت المُرخَّص" الآمن ضد التلاعب — انظر التوثيق أعلى. هذه هي
+  /// الدالة الوحيدة التي يجب استخدامها في هذا الملف لأي مقارنة تتعلق
+  /// بانتهاء/بدء اشتراك (بدلاً من `DateTime.now()` مباشرة).
+  static Future<DateTime> _licenseNow() async {
+    final real = _systemNow();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastMs = prefs.getInt(_lastSeenTimeKey);
+      final last =
+          (lastMs != null) ? DateTime.fromMillisecondsSinceEpoch(lastMs) : null;
+      final safe = (last != null && last.isAfter(real)) ? last : real;
+      // نُحدِّث المزلاج فقط لو تقدَّم فعلياً (لا داعي لكتابة غير ضرورية)
+      if (last == null || safe.isAfter(last)) {
+        await prefs.setInt(_lastSeenTimeKey, safe.millisecondsSinceEpoch);
+      }
+      return safe;
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SubscriptionService._licenseNow');
+      return real; // فشل القراءة/الكتابة → أقل سوءاً هو استخدام الوقت الفعلي
+    }
+  }
 
   // ======================================================================
   // الـ salt المستخدم فقط لحماية الأكواد الترويجية/التجريبية (غير الحرجة
@@ -147,7 +237,8 @@ class SubscriptionService {
         try {
           stableId = await _androidIdPlugin.getId();
         } catch (e, st) {
-          ErrorHandler.logError(e, st, 'SubscriptionService.getDeviceId.androidId');
+          ErrorHandler.logError(
+              e, st, 'SubscriptionService.getDeviceId.androidId');
         }
       }
 
@@ -289,6 +380,31 @@ class SubscriptionService {
           'هذا الرمز تم استخدامه بالفعل\nيمكنك الحصول على رمز جديد من المطور');
     }
 
+    // 🔴 تحصين إضافي (best-effort) ضد إعادة استخدام الكود عبر حذف/إعادة
+    // تثبيت التطبيق — انظر التوثيق الكامل أعلى
+    // `ApiClient.redeemActivationCode()`. الفحص المحلي أعلاه (usedHashes)
+    // وحده لا يكفي لأنه يُمسَح بالكامل عند إعادة التثبيت، بينما معرّف
+    // الجهاز (deviceId) يبقى ثابتاً. هنا نسأل السيرفر (إن كان متصلاً)
+    // "هل هذا الكود مُسجَّل بالفعل لجهاز *آخر* مختلف؟" — ونمنع التفعيل
+    // فقط في حال تأكيد صريح وقاطع بذلك. لا يُشترَط اتصال ناجح للاستمرار
+    // (Graceful Degradation): لو تعذّر الوصول للسيرفر (null) نُكمل
+    // بالاعتماد على الفحص المحلي وحده — تماماً كسلوك النظام قبل هذا
+    // الإصلاح — حتى لا تُفقَد قدرة التفعيل الأوفلاين الحقيقية.
+    if (codeHash != devMasterHash) {
+      final deviceId = await getDeviceId();
+      final serverVerdict = debugRedeemOverride != null
+          ? await debugRedeemOverride!(codeHash: codeHash, deviceId: deviceId)
+          : await apiClient.redeemActivationCode(
+              codeHash: codeHash, deviceId: deviceId);
+      if (serverVerdict == false) {
+        return ActivationResult.fail('هذا الرمز مُسجَّل بالفعل على جهاز آخر\n'
+            'لا يمكن استخدام نفس الرمز على أكثر من جهاز\n'
+            'تواصل مع المطور للحصول على رمز جديد إذا لزم الأمر');
+      }
+      // serverVerdict == true (مسموح) أو null (تعذّر الوصول للسيرفر) →
+      // نُكمل التفعيل اعتماداً على الفحص المحلي فقط، بأمان تام.
+    }
+
     // تحديد الخطة والتاريخ
     final planName = entry['plan'] as String;
     final days = entry['days'] as int;
@@ -299,12 +415,17 @@ class SubscriptionService {
     );
 
     // حساب تاريخ الانتهاء (إذا كان هناك اشتراك حالي → تمديده)
+    // ⚠️ نستخدم `_licenseNow()` (المزلاج الزمني الآمن) بدل `DateTime.now()`
+    // الخام هنا أيضاً — انظر التوثيق الكامل أعلى هذا الملف — لضمان أن نقطة
+    // بداية أي اشتراك جديد/مُمدَّد لا تعتمد أبداً على ساعة نظام قابلة
+    // للتلاعب، وليتم "تسجيل" هذه اللحظة فوراً في المزلاج (Ratchet Anchor).
     final current = await getCurrentSubscription();
-    DateTime startDate = DateTime.now();
+    final now = await _licenseNow();
+    DateTime startDate = now;
     if (current.isActive &&
         current.isPaid &&
         current.expiryDate != null &&
-        !current.isExpired) {
+        !(await _isExpiredSafe(current))) {
       // تمديد من نهاية الاشتراك الحالي
       startDate = current.expiryDate!;
     }
@@ -314,7 +435,7 @@ class SubscriptionService {
 
     final subscription = UserSubscription(
       plan: plan,
-      startDate: DateTime.now(),
+      startDate: now,
       expiryDate: expiryDate,
       isActive: true,
       isTrial: desc.contains('تجربة'),
@@ -340,7 +461,10 @@ class SubscriptionService {
         if (raw is String && raw.isNotEmpty) {
           final sub = UserSubscription.fromJson(
               Map<String, dynamic>.from(jsonDecode(raw)));
-          if (!sub.isExpired) return sub;
+          // ⚠️ نستخدم `_isExpiredSafe()` (المزلاج الزمني) بدل `sub.isExpired`
+          // الخام هنا — انظر التوثيق الكامل أعلى هذا الملف — لمنع تمديد
+          // اشتراك منتهٍ فعلياً إلى ما لا نهاية عبر إرجاع ساعة الجهاز للخلف.
+          if (!(await _isExpiredSafe(sub))) return await _withSafeDays(sub);
           // انتهى → أعد للـ free
           return UserSubscription.free();
         }
@@ -351,12 +475,44 @@ class SubscriptionService {
       if (raw != null && raw.isNotEmpty) {
         final sub = UserSubscription.fromJson(
             Map<String, dynamic>.from(jsonDecode(raw)));
-        if (!sub.isExpired) return sub;
+        if (!(await _isExpiredSafe(sub))) return await _withSafeDays(sub);
       }
     } catch (e, st) {
-      ErrorHandler.logError(e, st, 'SubscriptionService.getCurrentSubscription');
+      ErrorHandler.logError(
+          e, st, 'SubscriptionService.getCurrentSubscription');
     }
     return UserSubscription.free();
+  }
+
+  /// نسخة آمنة (ضد التلاعب بالساعة) من `UserSubscription.isExpired` —
+  /// تستخدم `_licenseNow()` (المزلاج الزمني الأحادي الاتجاه) بدل
+  /// `DateTime.now()` الخام المُستخدَم داخل الـ getter الأصلي في النموذج.
+  static Future<bool> _isExpiredSafe(UserSubscription sub) async {
+    if (sub.expiryDate == null) return false;
+    final now = await _licenseNow();
+    return now.isAfter(sub.expiryDate!);
+  }
+
+  /// يُعيد نسخة من الاشتراك بحقل `daysRemaining` مُعاد حسابه بأمان بناءً
+  /// على `_licenseNow()` بدل الاعتماد على القيمة المخزَّنة وقت آخر حفظ
+  /// (والتي كانت تُحسَب أصلاً عبر `DateTime.now()` الخام في
+  /// `UserSubscription.fromJson`). هذا يضمن أن "الأيام المتبقية" المعروضة
+  /// للمستخدم في الواجهة (`activate_subscription_screen.dart`) تتناقص
+  /// بشكل صحيح مع مرور الوقت الحقيقي فقط، ولا تتجمَّد أو تُعاد للخلف لو
+  /// تم إرجاع ساعة الجهاز.
+  static Future<UserSubscription> _withSafeDays(UserSubscription sub) async {
+    if (sub.expiryDate == null) return sub;
+    final now = await _licenseNow();
+    final safeDays = sub.expiryDate!.difference(now).inDays.clamp(0, 9999);
+    if (safeDays == sub.daysRemaining) return sub;
+    return UserSubscription(
+      plan: sub.plan,
+      startDate: sub.startDate,
+      expiryDate: sub.expiryDate,
+      isActive: sub.isActive,
+      isTrial: sub.isTrial,
+      daysRemaining: safeDays,
+    );
   }
 
   // ======================================================================
@@ -458,6 +614,174 @@ class SubscriptionService {
   static Future<int> getMaxStudentsPerClass() async {
     final sub = await getCurrentSubscription();
     return sub.planInfo.maxStudentsPerClass;
+  }
+
+  // ======================================================================
+  // 🔴 فرض حد "عدد المعلمين" (Seat Limits) — ثغرة تجارية جسيمة تم
+  // اكتشافها أثناء تدقيق Pillar 2:
+  //
+  // كان الحقل `maxTeachers` موجوداً في `SubscriptionPlanInfo` ومعروضاً
+  // فعلياً في شاشة الأسعار (subscription_screen.dart) كرقم تسويقي
+  // ("1 معلم" / "غير محدود")، لكنه لم يكن يُفرَض في أي مكان فعلياً —
+  // `AdminService.createUser()` كانت تسمح بإنشاء عدد غير محدود من
+  // حسابات المعلمين بغضّ النظر عن باقة الاشتراك الحالية (حتى في الخطة
+  // المجانية أو الأساسية أو الاحترافية التي تنص جميعها على "معلم واحد
+  // فقط"). هذا يعني عملياً أن أي مدرسة كان بإمكانها استخدام باقة فردية
+  // رخيصة (أو حتى المجانية) وإنشاء عدد غير محدود من حسابات المعلمين
+  // تحتها دون أي قيد — وهي بالضبط الحالة التي من المفترض أن تدفع
+  // مقابلها باقة "مدرسة" (school) ذات الحد غير المحدود (-1).
+  //
+  // ✅ الإصلاح: توفير `getMaxTeachers()` هنا (بنفس نمط
+  // `getMaxStudentsPerClass()`)، واستدعاؤها إلزامياً من
+  // `AdminService.createUser()` قبل السماح بإنشاء أي حساب جديد بدور
+  // "معلم" — يُحسَب عدد حسابات المعلمين النشطة حالياً (باستثناء
+  // المطوّر/المدير/المشرف الذين لا يُحتسَبون كـ "مقاعد معلمين")، ويُرفض
+  // إنشاء حساب جديد إذا كان العدد الحالي يساوي أو يتجاوز حد الباقة.
+  // ======================================================================
+
+  /// الحد الأقصى لعدد حسابات "المعلمين" (Seats) المسموح بها بحسب باقة
+  /// الاشتراك الحالية. -1 تعني غير محدود (خطة "مدرسة").
+  static Future<int> getMaxTeachers() async {
+    final sub = await getCurrentSubscription();
+    return sub.planInfo.maxTeachers;
+  }
+
+  // ======================================================================
+  // 🔴 معمارية استقبال تحديثات بوابة الدفع (Paymob) — ثغرة معمارية
+  // جسيمة تم اكتشافها أثناء تدقيق Pillar 2:
+  //
+  // النظام الحالي بالكامل محلي/offline: التفعيل يتم فقط عبر إدخال كود
+  // موقَّع رقمياً (RSA) يدوياً من قِبل المستخدم. لا يوجد أي مسار برمجي
+  // في التطبيق يتحقق من حالة اشتراك "من السيرفر" على الإطلاق. هذا يعني:
+  //
+  //  1) عند إضافة الدفع الإلكتروني عبر Paymob مستقبلاً، الـ Webhook الذي
+  //     ترسله Paymob عند نجاح الدفع سيصل حصرياً إلى الباك-إند (Django
+  //     على studygrades2026.pythonanywhere.com)، وليس للتطبيق نفسه —
+  //     الـ webhooks هي أحداث خادم-لخادم (Server-to-Server) بطبيعتها
+  //     ولا يمكن لأي تطبيق موبايل استقبالها مباشرة.
+  //  2) بدون مسار مصالحة (Reconciliation) بين حالة الاشتراك "الرسمية"
+  //     على السيرفر (التي يحدّثها الـ Webhook فور الدفع) وحالة الاشتراك
+  //     "المحلية" في التطبيق (Hive/SharedPreferences)، سيدفع العميل فعلياً
+  //     عبر Paymob لكن تطبيقه لن "يعرف" بذلك أبداً — لأن لا شيء يخبره.
+  //
+  // ✅ الحل المعماري المُطبَّق هنا: نمط "Pull-based Reconciliation".
+  // بما أن التطبيق (العميل) لا يمكنه استقبال Webhook مباشرة، فهو بدلاً
+  // من ذلك *يسأل* السيرفر دورياً عن آخر حالة اشتراك "رسمية" معروفة له
+  // (GET /subscription/status/ — انظر ApiClient.getSubscriptionStatus)،
+  // ويُحدِّث نسخته المحلية إذا كانت حالة السيرفر أحدث/مختلفة. تدفق العمل
+  // الكامل المتوقَّع من الباك-إند (خارج نطاق هذا المستودع، لكن موثَّق هنا
+  // ليعرفه أي مطوّر باك-إند يُكمل هذا التكامل):
+  //
+  //   Paymob (نجاح الدفع)
+  //        │  HTTPS POST (Webhook/Callback موقَّع بـ HMAC من Paymob)
+  //        ▼
+  //   Django Backend: /api/mobile/payments/paymob/webhook/
+  //        │  يتحقق من توقيع HMAC الخاص بـ Paymob (hmac Secret الخاص
+  //        │  بالتاجر)، ثم يُحدِّث سجل اشتراك المعلم/المدرسة في قاعدة
+  //        │  بيانات السيرفر (plan/expiry_date/is_active)
+  //        ▼
+  //   التطبيق (لاحقاً، عند فتحه أو دورياً): GET /subscription/status/
+  //        │  يُعيد نفس السجل المُحدَّث فوراً
+  //        ▼
+  //   SubscriptionService.syncWithServer() ← هذه الدالة
+  //        │  تُقارن مع الحالة المحلية وتُحدِّثها إذا لزم الأمر
+  //        ▼
+  //   Hive/SharedPreferences محلياً (نفس مسار _saveSubscription الحالي)
+  //
+  // هذا النمط لا يتطلب أي بنية تحتية إضافية (لا Push Notifications ولا
+  // WebSockets)، يعمل بشكل موثوق حتى مع اتصال متقطع (best-effort، لا
+  // يفشل التطبيق أبداً إذا تعذّر الوصول للسيرفر)، ويحل بالضبط نفس مشكلة
+  // "الدفع نجح لكن التطبيق لا يعرف" التي تنشأ حتماً مع أي بوابة دفع تعمل
+  // عبر Webhooks خادم-لخادم.
+  //
+  // ⚠️ سياسة الدمج (Merge Policy) المُتَّبعة أدناه: حالة السيرفر تُعتمَد
+  // فقط إذا كانت اشتراكاً "مدفوعاً حقيقياً" (isPaid) لتفادي أن يُصفِّر
+  // خطأً في السيرفر (مثلاً حساب تجريبي جديد لم يُفعَّل بعد) اشتراكاً
+  // محلياً مدفوعاً فعلياً عبر كود RSA يدوي. بعبارة أخرى: تحديثات
+  // السيرفر تُستخدَم لـ *ترقية*/تحديث الاشتراك، وليس لإسقاطه محلياً إلى
+  // "مجاني" ما لم يكن السيرفر صريحاً بأن الاشتراك انتهى فعلياً
+  // (is_active == false مع وجود plan مدفوعة سابقاً — حالة "تم الإلغاء
+  // أو انتهت صلاحية الدفع المتكرر").
+  // ======================================================================
+
+  /// يُصالِح (Reconciles) حالة الاشتراك المحلية مع حالة "رسمية" من
+  /// السيرفر (التي قد تكون تحدَّثت فوراً عبر Webhook من بوابة الدفع
+  /// Paymob دون أي تدخل من المستخدم داخل التطبيق نفسه).
+  ///
+  /// آمن تماماً للاستدعاء بشكل متكرر (عند بدء التطبيق، عند فتح شاشة
+  /// الاشتراك، أو دورياً في الخلفية) — best-effort بالكامل: أي فشل في
+  /// الشبكة أو صيغة غير متوقعة من السيرفر يُسجَّل فقط عبر ErrorHandler
+  /// ولا يُعدِّل أي شيء محلياً ولا يرمي أي استثناء للمستدعي.
+  ///
+  /// يُعيد `true` إذا تم فعلاً تحديث الاشتراك المحلي نتيجة هذه المزامنة
+  /// (مفيد لعرض إشعار للمستخدم مثل "تم تفعيل اشتراكك! 🎉")، و`false` في
+  /// أي حالة أخرى (لا تغيير / تعذّر الاتصال / حالة السيرفر غير صالحة).
+  static Future<bool> syncWithServer() async {
+    try {
+      final serverData = debugServerFetchOverride != null
+          ? await debugServerFetchOverride!()
+          : await apiClient.getSubscriptionStatus();
+      if (serverData == null) return false;
+
+      final planName = serverData['plan']?.toString();
+      if (planName == null) return false;
+      final plan = SubscriptionPlan.values.firstWhere(
+        (p) => p.name == planName,
+        orElse: () => SubscriptionPlan.free,
+      );
+
+      final serverIsActive = serverData['is_active'] == true;
+      final serverExpiry = serverData['expiry_date'] != null
+          ? DateTime.tryParse(serverData['expiry_date'].toString())
+          : null;
+      final serverStart = serverData['start_date'] != null
+          ? DateTime.tryParse(serverData['start_date'].toString())
+          : null;
+      final serverIsTrial = serverData['is_trial'] == true;
+
+      // ⚠️ نستخدم `_licenseNow()` هنا أيضاً بدل `DateTime.now()` الخام،
+      // للاتساق مع باقي الملف (انظر التوثيق الكامل أعلى قسم "المزلاج
+      // الزمني"). صحيح أن حالة السيرفر هنا "رسمية" أصلاً ولا تعتمد على
+      // ساعة هذا الجهاز لتحديد الانتهاء، لكن `daysRemaining` نفسها تُعرَض
+      // لاحقاً في واجهة المستخدم، فيجب أن تبقى متسقة مع نفس "الوقت الآمن"
+      // المُستخدَم في كل مكان آخر بالتطبيق (وإلا قد تظهر قيمتان مختلفتان
+      // لعدد الأيام المتبقية بحسب المصدر الذي جلب منه الاشتراك).
+      final now = await _licenseNow();
+      final serverSub = UserSubscription(
+        plan: plan,
+        startDate: serverStart,
+        expiryDate: serverExpiry,
+        isActive: serverIsActive,
+        isTrial: serverIsTrial,
+        daysRemaining: serverExpiry != null
+            ? serverExpiry.difference(now).inDays.clamp(0, 9999)
+            : -1,
+      );
+
+      final localSub = await getCurrentSubscription();
+
+      // سياسة الدمج: نطبّق تحديث السيرفر فقط في إحدى حالتين آمنتين:
+      //  أ) السيرفر يُعلن عن خطة مدفوعة نشطة أحدث/مختلفة عن المحلية
+      //     (ترقية اشتراك فورية عبر الدفع الإلكتروني).
+      //  ب) السيرفر يُعلن صراحة أن خطة مدفوعة سابقاً لم تعد نشطة
+      //     (is_active == false) — أي إلغاء/انتهاء دفع متكرر رسمي.
+      final shouldApplyUpgrade = serverSub.isPaid &&
+          serverIsActive &&
+          (serverSub.plan != localSub.plan ||
+              serverSub.expiryDate != localSub.expiryDate);
+
+      final shouldApplyDeactivation =
+          localSub.isPaid && !serverIsActive && planName == localSub.plan.name;
+
+      if (shouldApplyUpgrade || shouldApplyDeactivation) {
+        await _saveSubscription(serverSub);
+        return true;
+      }
+      return false;
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'SubscriptionService.syncWithServer');
+      return false;
+    }
   }
 
   // ======================================================================

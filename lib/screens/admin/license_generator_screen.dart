@@ -29,8 +29,7 @@ class LicenseGeneratorScreen extends StatefulWidget {
   const LicenseGeneratorScreen({super.key});
 
   @override
-  State<LicenseGeneratorScreen> createState() =>
-      _LicenseGeneratorScreenState();
+  State<LicenseGeneratorScreen> createState() => _LicenseGeneratorScreenState();
 }
 
 class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
@@ -53,8 +52,9 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
   }
 
   String get _generatedCommand {
-    final deviceId =
-        _deviceIdCtrl.text.trim().isEmpty ? '<DEVICE_ID>' : _deviceIdCtrl.text.trim();
+    final deviceId = _deviceIdCtrl.text.trim().isEmpty
+        ? '<DEVICE_ID>'
+        : _deviceIdCtrl.text.trim();
     return 'python3 generate_license.py --device-id $deviceId '
         '--plan $_selectedPlan --days $_days';
   }
@@ -93,8 +93,8 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
               decoration: BoxDecoration(
                 color: AppColors.warning.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: AppColors.warning.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,8 +139,7 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.paste_rounded),
                   onPressed: () async {
-                    final data =
-                        await Clipboard.getData(Clipboard.kTextPlain);
+                    final data = await Clipboard.getData(Clipboard.kTextPlain);
                     if (data?.text != null) {
                       _deviceIdCtrl.text = data!.text!.trim().toUpperCase();
                       setState(() {});
@@ -240,12 +239,10 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
                           color: AppColors.info)),
                   const SizedBox(height: 8),
                   _step('1', 'انسخ الأمر أعلاه بعد إدخال معرّف جهاز العميل'),
-                  _step('2',
-                      'شغّل الأمر على جهازك الشخصي داخل مجلد dev_tools'),
-                  _step('3',
-                      'انسخ الكود الناتج (يبدأ بـ SGV2-) وأرسله للعميل'),
-                  _step('4',
-                      'العميل يُدخل الكود في شاشة "تفعيل الاشتراك" لديه'),
+                  _step('2', 'شغّل الأمر على جهازك الشخصي داخل مجلد dev_tools'),
+                  _step('3', 'انسخ الكود الناتج (يبدأ بـ SGV2-) وأرسله للعميل'),
+                  _step(
+                      '4', 'العميل يُدخل الكود في شاشة "تفعيل الاشتراك" لديه'),
                 ],
               ),
             ),

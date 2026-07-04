@@ -285,6 +285,8 @@ class NLPParser {
     'تلت': 0.333,
     'وثلاثه ارباع': 0.75,
     'وثلاثة ارباع': 0.75,
+    'ثلاثه ارباع': 0.75,
+    'ثلاثة ارباع': 0.75,
     // أرقام كسرية شائعة في الدرجات (مثل 18.5، 9.5)
     // 21-29
     'واحد وعشرين': 21,
@@ -379,10 +381,26 @@ class NLPParser {
 
   /// خريطة الأرقام العربية الهندية إلى اللاتينية
   static const Map<String, String> _arabicDigitsMap = {
-    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
-    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+    '٠': '0',
+    '١': '1',
+    '٢': '2',
+    '٣': '3',
+    '٤': '4',
+    '٥': '5',
+    '٦': '6',
+    '٧': '7',
+    '٨': '8',
+    '٩': '9',
+    '۰': '0',
+    '۱': '1',
+    '۲': '2',
+    '۳': '3',
+    '۴': '4',
+    '۵': '5',
+    '۶': '6',
+    '۷': '7',
+    '۸': '8',
+    '۹': '9',
   };
 
   static String _normalize(String text) {
@@ -449,96 +467,113 @@ class NLPParser {
     );
   }
 
+  /// كسر عشري مدعوم؟ (نص/ربع/تلت/ثلاثة أرباع)
+  static bool _isFraction(double n) =>
+      n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75;
+
+  /// يضيف كسراً إلى آخر رقم صحيح في القائمة (مثال: [10] + 0.75 -> [10.75]).
+  /// إذا لم يوجد رقم سابق، أو كان الرقم السابق يحتوي بالفعل على كسر،
+  /// يُتجاهل الكسر الجديد لمنع تراكم مزدوج أو كسر معلّق بلا سياق.
+  static void _appendFraction(List<double> numbers, double fraction) {
+    if (numbers.isEmpty) return;
+    final prev = numbers.last;
+    final prevWhole = prev.truncateToDouble();
+    if (prev == prevWhole) {
+      numbers[numbers.length - 1] =
+          double.parse((prev + fraction).toStringAsFixed(3));
+    }
+    // وإلا: الرقم الأخير يحتوي على كسر بالفعل → تجاهل الكسر الجديد
+  }
+
+  /// يستخرج الأرقام العربية المنطوقة من النص المُطبَّع، عبر تمريرة واحدة
+  /// متسلسلة من اليسار لليمين (بدلاً من تمريرتين متداخلتين كما في السابق).
+  ///
+  /// إصلاح ثغرة أمنية خطيرة (تصحيح جذري لمحرك التعرف على الكسور):
+  /// كانت هناك تمريرتان منفصلتان — تمريرة أولى تبحث عن عبارات مركبة
+  /// (مثل "خمسة عشر"، "وثلاثة أرباع") كنص فرعي داخل الجملة الكاملة، ثم
+  /// تمريرة ثانية تُعيد معالجة **نفس الكلمات** كلمة بكلمة دون علم بأن
+  /// التمريرة الأولى استهلكتها بالفعل. النتيجة كانت كارثية على البيانات:
+  ///   - "عشرة وثلاثة أرباع" (10.75) كانت تُسجَّل كـ [10, 3] بدلاً من [10.75]
+  ///   - "خمسة عشر" (15) كانت تُسجَّل كـ [15, 5, 10] (أرقام وهمية إضافية)
+  ///   - "عشرة عشرة" (درجتان منفصلتان = 10 لكل حقل) كانت تُفقَد إحداهما
+  ///     بسبب فحص "منع التكرار" الخاطئ الذي يحذف القيم المتطابقة الشرعية
+  /// هذا التصحيح يستخدم مؤشراً واحداً `i` يتحرك للأمام فقط، ويستهلك كل
+  /// كلمة مرة واحدة فقط (تخطي الكلمات المُستهلَكة عبر `i += 2`)، مع عدم
+  /// استخدام أي فحص "يحتوي على القيمة بالفعل" الذي كان يُسقِط درجات
+  /// متكررة شرعية (مثل رصد 10/10 لحقلين مختلفين بنفس القيمة).
   static void _extractArabicNumbers(String normalized, List<double> numbers) {
-    // تجربة العبارات المركبة المسجّلة أولاً (مثل "خمسة وعشرين")
-    for (final entry in _arabicNumbers.entries) {
-      if (!entry.key.contains(' ')) continue; // عبارات متعددة الكلمات فقط
-      final nk = _normalize(entry.key);
-      if (nk.isEmpty) continue;
-      if (normalized.contains(nk)) {
-        final n = entry.value;
-        if (n != 0.5 && n != 0.25 && n != 0.333 && n != 0.75) {
-          if (!numbers.contains(n)) {
+    final words = normalized
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .toList(growable: false);
+    var i = 0;
+
+    while (i < words.length) {
+      // ── أولاً: تجربة عبارة من كلمتين متتاليتين تطابق مفتاحاً مركّباً في
+      // القاموس حرفياً (يغطي: الأعداد من 11-19، الكسور مثل "وثلاثة أرباع"،
+      // والمركّبات "وحدة+عشرات" مثل "خمسة وعشرين") — أولوية قصوى لأنها
+      // أكثر تحديداً من أي تطابق كلمة مفردة ──
+      if (i + 1 < words.length) {
+        final twoWordKey = '${words[i]} ${words[i + 1]}';
+        final n = _arabicNumbers[twoWordKey];
+        if (n != null) {
+          if (_isFraction(n)) {
+            _appendFraction(numbers, n);
+          } else {
             numbers.add(n);
           }
+          i += 2;
+          continue;
         }
       }
-    }
 
-    // ثم كلمات مفردة مع دعم التركيبات بكلا الترتيبين:
-    //   وحدات + عشرات: "خمسة وعشرين" = 25
-    //   عشرات + وحدات: "عشرين وخمسة" = 25
-    final words = normalized.split(' ');
-    for (var i = 0; i < words.length; i++) {
       final w = words[i];
-      if (w.isEmpty) continue;
 
+      // ── تطابق كلمة مفردة، مع دعم إسقاط حرف "و" البادئ إن لزم ──
       String? matched;
       if (_arabicNumbers.containsKey(w)) {
         matched = w;
       } else if (w.startsWith('و') &&
+          w.length > 1 &&
           _arabicNumbers.containsKey(w.substring(1))) {
         matched = w.substring(1);
       }
 
-      if (matched != null) {
-        final n = _arabicNumbers[matched]!;
+      if (matched == null) {
+        i++;
+        continue;
+      }
 
-        // ── الكسور: تُضاف إلى الرقم السابق ──
-        // إصلاح: نتأكد أن الكسر لم يُضَف بعد لمنع التراكم المزدوج
-        if ((n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75)) {
-          if (numbers.isNotEmpty) {
-            final prev = numbers.last;
-            // تجنب التراكم: إذا كان الرقم الأخير يحتوي بالفعل على كسر → لا تُضف
-            final prevWhole = prev.truncateToDouble();
-            if (prev == prevWhole) {
-              // الرقم الأخير صحيح (بدون كسر) → أضف الكسر
-              numbers[numbers.length - 1] =
-                  double.parse((prev + n).toStringAsFixed(3));
-            }
-            // إذا كان الرقم الأخير يحتوي على كسر بالفعل → تجاهل الكسر الجديد
-          }
-          // إذا لم يكن هناك رقم سابق، تُهمَل (لا يُضاف كسر وحده كرقم)
+      final n = _arabicNumbers[matched]!;
+
+      // ── الكسور المفردة (نادرة الحدوث بدون عبارة مركّبة، لكن مدعومة
+      // احتياطاً): تُضاف إلى الرقم السابق ──
+      if (_isFraction(n)) {
+        _appendFraction(numbers, n);
+        i++;
+        continue;
+      }
+
+      // ── عشرات (20,30,…90) تعقبها وحدات بـ "و": "عشرين وخمسة" = 25 ──
+      // (الاتجاه المعاكس "خمسة وعشرين" مغطّى بالفعل عبر عبارات القاموس
+      // المركّبة أعلاه، فلا حاجة لمعالجته يدوياً هنا)
+      if (n >= 20 && n % 10 == 0 && i + 1 < words.length) {
+        var nextW = words[i + 1];
+        if (nextW.startsWith('و') && nextW.length > 1) {
+          nextW = nextW.substring(1);
+        }
+        final nextN = _arabicNumbers[nextW];
+        if (nextN != null && nextN >= 1 && nextN <= 9) {
+          numbers.add(n + nextN);
+          i += 2;
           continue;
         }
-
-        // ── وحدات (1-9) يعقبها عشرات بـ "و": خمسة وعشرين = 25 ──
-        if (n >= 1 && n <= 9 && i + 1 < words.length) {
-          var nextW = words[i + 1];
-          if (nextW.startsWith('و')) nextW = nextW.substring(1);
-          if (_arabicNumbers.containsKey(nextW)) {
-            final nextN = _arabicNumbers[nextW]!;
-            if (nextN >= 20 && nextN % 10 == 0) {
-              final compound = n + nextN;
-              if (!numbers.contains(compound)) numbers.add(compound);
-              i++; // تخطي كلمة العشرات
-              continue;
-            }
-          }
-        }
-
-        // ── عشرات (20,30,…) تعقبها وحدات بـ "و": عشرين وخمسة = 25 ──
-        if (n >= 20 && n % 10 == 0 && i + 1 < words.length) {
-          var nextW = words[i + 1];
-          if (nextW.startsWith('و')) nextW = nextW.substring(1);
-          if (_arabicNumbers.containsKey(nextW)) {
-            final nextN = _arabicNumbers[nextW]!;
-            if (nextN >= 1 && nextN <= 9) {
-              final compound = n + nextN;
-              if (!numbers.contains(compound)) numbers.add(compound);
-              i++; // تخطي كلمة الوحدات
-              continue;
-            }
-          }
-        }
-
-        // ── رقم عادي: تجنب التكرار ──
-        if (n == 0 && numbers.contains(0)) continue;
-        // إصلاح: الشرط المكرر (n > 0 && existing == n) هو نفسه (existing == n)
-        if (!numbers.contains(n)) {
-          numbers.add(n);
-        }
       }
+
+      // ── رقم عادي — لا يوجد فحص "منع تكرار": درجتان متطابقتان لحقلين
+      // مختلفين (مثال: "عشرة عشرة") يجب أن تُسجَّلا كلتاهما ──
+      numbers.add(n);
+      i++;
     }
   }
 

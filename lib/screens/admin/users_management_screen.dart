@@ -181,8 +181,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
             decoration: InputDecoration(
               hintText: 'بحث عن مستخدم...',
               hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  color: AppColors.primary),
+              prefixIcon:
+                  const Icon(Icons.search_rounded, color: AppColors.primary),
               filled: true,
               fillColor: AppColors.background,
               contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -198,8 +198,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
             child: Row(
               children: [
                 _filterChip('الكل', 'all', Icons.people_rounded),
-                _filterChip('المطورون', UserRole.developer,
-                    Icons.code_rounded),
+                _filterChip('المطورون', UserRole.developer, Icons.code_rounded),
                 _filterChip('المديرون', UserRole.admin, Icons.shield_rounded),
                 _filterChip('المشرفون', UserRole.manager, Icons.school_rounded),
                 _filterChip('المعلمون', UserRole.teacher, Icons.book_rounded),
@@ -578,9 +577,10 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     final currentLevel = UserRole.level(currentUser?.role ?? '');
     final allowedRoles =
         UserRole.all.where((r) => UserRole.level(r) < currentLevel).toList();
-    String selectedRole = (existing != null && allowedRoles.contains(existing.role))
-        ? existing.role
-        : (allowedRoles.isNotEmpty ? allowedRoles.last : UserRole.teacher);
+    String selectedRole =
+        (existing != null && allowedRoles.contains(existing.role))
+            ? existing.role
+            : (allowedRoles.isNotEmpty ? allowedRoles.last : UserRole.teacher);
     final formKey = GlobalKey<FormState>();
     final isEdit = existing != null;
 
@@ -588,8 +588,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
               Icon(
@@ -621,9 +621,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       ctrl: usernameCtrl,
                       label: 'اسم المستخدم *',
                       icon: Icons.person_outline,
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'مطلوب'
-                          : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'مطلوب' : null,
                     ),
                     const SizedBox(height: 10),
                     _dlgField(
@@ -671,7 +670,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                                 ),
                               ))
                           .toList(),
-                      onChanged: (v) => setSt(() => selectedRole = v ?? selectedRole),
+                      onChanged: (v) =>
+                          setSt(() => selectedRole = v ?? selectedRole),
                     ),
                   ],
                 ),
@@ -778,8 +778,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'تعيين كلمة مرور جديدة',
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
@@ -800,8 +799,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                 labelText: 'كلمة المرور الجديدة',
                 labelStyle: GoogleFonts.cairo(),
                 prefixIcon: const Icon(Icons.lock_outline),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -949,7 +948,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // close progress
-      _showError('تعذر حذف الحساب: ${e.toString().replaceAll('Exception: ', '')}');
+      _showError(
+          'تعذر حذف الحساب: ${e.toString().replaceAll('Exception: ', '')}');
     }
   }
 }

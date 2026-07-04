@@ -72,8 +72,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               _buildSection('الإدارة', Icons.admin_panel_settings_rounded),
               _buildAdminMenu(user),
               const SizedBox(height: 16),
-              _buildSection('التحليلات والمراقبة',
-                  Icons.analytics_outlined),
+              _buildSection('التحليلات والمراقبة', Icons.analytics_outlined),
               _buildAnalyticsMenu(user),
               if (user.canEditSystemSettings) ...[
                 const SizedBox(height: 16),
@@ -113,8 +112,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -306,8 +305,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.success.withValues(alpha: 0.13),
                     borderRadius: BorderRadius.circular(10),
@@ -694,8 +693,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(Icons.shield_rounded, color: AppColors.primary),

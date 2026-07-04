@@ -324,7 +324,8 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded, color: AppColors.warning, size: 18),
+          const Icon(Icons.wifi_off_rounded,
+              color: AppColors.warning, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -354,7 +355,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             const SizedBox(height: 80),
-            Icon(Icons.cloud_off_rounded, size: 80, color: Colors.grey.shade400),
+            Icon(Icons.cloud_off_rounded,
+                size: 80, color: Colors.grey.shade400),
             const SizedBox(height: 18),
             Text(
               'تعذّر جلب البيانات',
@@ -729,68 +731,68 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ]
               : stage.classes
-                    .map(
-                      (c) => InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SubjectSelectionScreen(
-                              classId: c.id,
-                              className: c.name,
-                            ),
-                          ),
-                        ),
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.background,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.class_rounded,
-                                  color: AppColors.primary,
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  c.name,
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  textAlign: TextAlign.right,
-                                ),
-                              ),
-                              Icon(
-                                Icons.arrow_back_ios_new_rounded,
-                                size: 16,
-                                color: AppColors.textHint,
-                              ),
-                            ],
+                  .map(
+                    (c) => InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SubjectSelectionScreen(
+                            classId: c.id,
+                            className: c.name,
                           ),
                         ),
                       ),
-                    )
-                    .toList(),
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(
+                                  alpha: 0.1,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.class_rounded,
+                                color: AppColors.primary,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                c.name,
+                                style: GoogleFonts.cairo(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              size: 16,
+                              color: AppColors.textHint,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
         ),
       ),
     );
