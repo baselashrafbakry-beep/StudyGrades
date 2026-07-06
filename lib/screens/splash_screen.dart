@@ -196,7 +196,7 @@ class _SplashScreenState extends State<SplashScreen>
                       child: Column(
                         children: [
                           Text(
-                            'Study Grades Voice',
+                            'StudyGrades',
                             style: GoogleFonts.cairo(
                               fontSize: 26,
                               fontWeight: FontWeight.bold,

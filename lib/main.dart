@@ -16,7 +16,7 @@ import 'theme/app_theme.dart';
 import 'utils/error_handler.dart';
 
 /// ═══════════════════════════════════════════════════
-/// Study Grades Voice - نظام رصد الدرجات الصوتي
+/// StudyGrades - نظام رصد الدرجات الصوتي
 /// المطور: م. باسل أشرف
 /// الإصدار: 2.0.0
 /// ═══════════════════════════════════════════════════
@@ -179,7 +179,7 @@ class StudyGradesApp extends StatelessWidget {
 
           return MaterialApp(
             // ─── بيانات التطبيق ───
-            title: 'Study Grades Voice',
+            title: 'StudyGrades',
             debugShowCheckedModeBanner: false,
 
             // ─── السمات ───

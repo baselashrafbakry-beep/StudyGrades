@@ -1,5 +1,5 @@
 name: study_grades_voice
-description: نظام رصد الدرجات الصوتي للمعلمين - Study Grades Voice by م. باسل أشرف
+description: نظام رصد الدرجات الصوتي للمعلمين - StudyGrades by م. باسل أشرف
 version: 2.0.0+1
 
 environment:

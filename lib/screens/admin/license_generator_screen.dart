@@ -39,8 +39,11 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
   String _selectedPlan = 'PRO';
   int _days = 30;
 
+  // ⚠️ محدَّث ليطابق الأسماء التجارية الرسمية من StudyGrades-commercial.env
+  // (BASIC=Starter/ستارتر) — رمز الخطة البرمجي 'BASIC' يبقى كما هو لأنه
+  // يجب أن يطابق _planCodeToName في subscription_service.dart تماماً.
   final Map<String, String> _plans = const {
-    'BASIC': 'أساسي',
+    'BASIC': 'ستارتر',
     'PRO': 'احترافي',
     'SCHOOL': 'مدرسة',
   };

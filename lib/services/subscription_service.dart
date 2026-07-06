@@ -170,11 +170,11 @@ class SubscriptionService {
       'days': 14,
       'desc': 'تجربة احترافية 14 يوم'
     },
-    // STUDY2026-TRIAL → تجربة أساسي شهر
+    // STUDY2026-TRIAL → تجربة ستارتر شهر
     _hashCode('STUDY2026-TRIAL'): {
       'plan': 'basic',
       'days': 30,
-      'desc': 'تجربة أساسي شهر'
+      'desc': 'تجربة ستارتر شهر'
     },
     // كود المطوّر الرئيسي — مخزَّن كـ hash فقط، غير ظاهر كنص صريح
     // في الكود المصدري ولا في أي ملف مُصرَّف (APK / main.dart.js).
@@ -270,8 +270,11 @@ class SubscriptionService {
     'SCHOOL': 'school',
   };
 
+  // ⚠️ محدَّث ليطابق الأسماء التجارية الرسمية من StudyGrades-commercial.env
+  // (basic=Starter/ستارتر، pro=Professional/احترافي) — راجع التوثيق الكامل
+  // أعلى SubscriptionPlans في subscription_model.dart.
   static const Map<String, String> _planLabelAr = {
-    'basic': 'أساسي',
+    'basic': 'ستارتر',
     'pro': 'احترافي',
     'school': 'مدرسة',
   };
@@ -644,6 +647,25 @@ class SubscriptionService {
   static Future<int> getMaxTeachers() async {
     final sub = await getCurrentSubscription();
     return sub.planInfo.maxTeachers;
+  }
+
+  // ======================================================================
+  // 🆕 حد "عدد الأجهزة" (Device Limit) — بحسب ملف الإعداد التجاري الرسمي
+  // (STARTER_DEVICE_LIMIT=1 / PROFESSIONAL_DEVICE_LIMIT=2). راجع التوثيق
+  // الكامل والصادق حول حدود الإنفاذ الفعلي أعلى حقل
+  // `SubscriptionPlanInfo.maxDevices` في subscription_model.dart —
+  // باختصار: النظام الحالي offline بالكامل ويربط كل كود ترخيص RSA بجهاز
+  // واحد عند توليده، لذا خطة Starter (حد=1) محقَّقة ببنية النظام تلقائياً؛
+  // خطة Professional (حد=2) تُدار حالياً عبر توليد كودين منفصلين عند
+  // الطلب من المطوّر، وليس عبر فحص برمجي مركزي داخل هذا التطبيق (يتطلب
+  // ذلك بنية حسابات على الباك-إند غير موجودة بعد في هذا المستودع).
+  // ======================================================================
+
+  /// الحد الأقصى لعدد الأجهزة المسموح تفعيل هذا الاشتراك عليها بحسب باقة
+  /// الاشتراك الحالية. -1 تعني غير محدود.
+  static Future<int> getMaxDevices() async {
+    final sub = await getCurrentSubscription();
+    return sub.planInfo.maxDevices;
   }
 
   // ======================================================================

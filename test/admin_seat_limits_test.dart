@@ -83,11 +83,18 @@ void main() {
       );
     });
 
-    test('خطة مدرسة (school): لا يوجد أي حد على عدد المعلمين', () async {
-      await setPlan(SubscriptionPlan.school); // maxTeachers = -1
+    // 🔄 محدَّث بأمر صريح من صاحب المنتج (ملف الإعداد التجاري الرسمي
+    // StudyGrades-commercial.env): خطة "مدرسة" لم تعد غير محدودة العدد —
+    // أصبح لها حد مقاعد ثابت SCHOOL_SEAT_LIMIT=25 (بدلاً من -1/غير محدود
+    // في النسخة القديمة). هذا الاختبار مُحدَّث ليعكس هذا القرار التجاري
+    // الجديد بدقة، ويضيف تحققاً صريحاً من رفض المعلم رقم 26.
+    test(
+        'خطة مدرسة (school): يُسمح بإنشاء حتى 25 معلماً بالضبط (SCHOOL_SEAT_LIMIT)',
+        () async {
+      await setPlan(SubscriptionPlan.school); // maxTeachers = 25
       await AdminService.initDefaultDeveloper();
 
-      for (var i = 1; i <= 10; i++) {
+      for (var i = 1; i <= 25; i++) {
         final t = await AdminService.createUser(
           username: 'teacher_$i',
           password: 'pass1234',
@@ -98,7 +105,19 @@ void main() {
         expect(t.role, UserRole.teacher);
       }
       final all = await AdminService.getAllUsers();
-      expect(all.where((u) => u.role == UserRole.teacher).length, 10);
+      expect(all.where((u) => u.role == UserRole.teacher).length, 25);
+
+      // المعلم رقم 26 يجب أن يُرفَض (25 نشط >= 25 حد المقاعد الرسمي للمدرسة)
+      expect(
+        () => AdminService.createUser(
+          username: 'teacher_26',
+          password: 'pass1234',
+          email: 'teacher26@test.com',
+          role: UserRole.teacher,
+          actorRole: UserRole.developer,
+        ),
+        throwsA(isA<Exception>()),
+      );
     });
 
     test('حسابات المدير/المشرف لا تُستهلك من حد المعلمين إطلاقاً', () async {

@@ -37,10 +37,13 @@ class AdminService {
   static const String developerPhone = '01014543845';
   static const String developerWhatsApp = 'https://wa.me/201014543845';
   static const String appVersion = '2.0.0';
-  static const String appName = 'Study Grades Voice';
+  // ⚠️ محدَّث بأمر صريح من صاحب المنتج ليطابق APP_DISPLAY_NAME و
+  // ANDROID_APPLICATION_ID الرسميين في ملف الإعداد التجاري
+  // (StudyGrades-commercial.env).
+  static const String appName = 'StudyGrades';
   static const String appNameAr = 'نظام رصد الدرجات الصوتي';
   static const String copyrightYear = '2026';
-  static const String packageName = 'com.myapp.mobile';
+  static const String packageName = 'com.studygrades.app';
   static const String serverUrl = 'studygrades2026.pythonanywhere.com';
   static const String serverUrlFull =
       'https://studygrades2026.pythonanywhere.com';

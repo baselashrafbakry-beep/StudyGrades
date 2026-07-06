@@ -363,6 +363,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         : 'حتى ${plan.maxClassesPerTeacher} فصل',
                     color,
                   ),
+                  // 🆕 حد الأجهزة — بحسب ملف الإعداد التجاري الرسمي
+                  // (STARTER_DEVICE_LIMIT=1 / PROFESSIONAL_DEVICE_LIMIT=2)
+                  _buildFeatureRow(
+                    '📱 الأجهزة',
+                    plan.isUnlimitedDevices
+                        ? 'غير محدود'
+                        : '${plan.maxDevices} ${plan.maxDevices == 1 ? "جهاز" : "جهازين"}',
+                    color,
+                  ),
                   _buildFeatureRow(
                       '🎤 الإدخال الصوتي', plan.voiceInput ? '✅' : '❌', color),
                   _buildFeatureRow(
