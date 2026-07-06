@@ -246,7 +246,13 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
             Positioned(
-              bottom: 30,
+              // إضافة نسخة آمنة من المسافة السفلية (safe-area) لمنع تداخل
+              // نص الإصدار/حقوق النشر مع شريط تنقل الإيماءات (gesture
+              // navigation bar) في الأجهزة الحديثة بدون أزرار فعلية —
+              // الخلفية المتدرجة نفسها تبقى full-bleed (بدون SafeArea) وهو
+              // التصميم المقصود لشاشة splash، لكن النص القابل للقراءة
+              // يحتاج احترام الحافة الآمنة تحديداً.
+              bottom: 30 + MediaQuery.of(context).padding.bottom,
               left: 0,
               right: 0,
               child: FadeTransition(
