@@ -44,3 +44,7 @@ key.properties
 # Local dev artifacts
 server.log
 upload_files/
+
+# Distributed release binaries (APK/AAB) — regeneratable via flutter build,
+# should not bloat the git repository with large binary files.
+release_artifacts/
