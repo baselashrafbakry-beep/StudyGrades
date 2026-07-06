@@ -4,7 +4,100 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_error.dart';
 import '../utils/error_handler.dart';
+
+/// نتيجة تفصيلية لطلب صلاحية الميكروفون — تُميّز بين الرفض المؤقت
+/// (يمكن إعادة الطلب) والرفض الدائم (يجب التوجيه لإعدادات النظام).
+enum MicPermissionResult {
+  granted,
+  denied,
+  permanentlyDenied,
+  restricted,
+}
+
+/// تصنيف أخطاء التعرف الصوتي إلى فئات مفهومة تُترجَم لرسائل عربية
+/// واضحة للمستخدم بدل عرض رمز خطأ تقني غير مفهوم.
+enum VoiceErrorType {
+  /// لم يُسمع كلام واضح — غالباً بسبب ضوضاء عالية أو صمت أو نطق غير مفهوم
+  noSpeechDetected,
+
+  /// خطأ في هاردوير الصوت — غالباً انقطاع الميكروفون أو استخدامه من تطبيق آخر
+  audioHardware,
+
+  /// صلاحية الميكروفون مرفوضة على مستوى النظام
+  permissionDenied,
+
+  /// مشكلة اتصال بالشبكة (عند استخدام التعرف الصوتي عبر السيرفر)
+  network,
+
+  /// المحرك الصوتي مشغول بجلسة أخرى أو طلبات كثيرة جداً
+  busy,
+
+  /// اللغة/اللهجة المطلوبة غير مدعومة على هذا الجهاز
+  languageUnavailable,
+
+  /// خطأ غير مصنّف
+  unknown,
+}
+
+/// رسائل عربية جاهزة لعرضها للمستخدم حسب نوع الخطأ.
+extension VoiceErrorTypeMessage on VoiceErrorType {
+  String get arabicMessage {
+    switch (this) {
+      case VoiceErrorType.noSpeechDetected:
+        return 'لم يتم سماعك بوضوح، حاول التحدث في مكان أهدأ وبصوت أعلى قليلاً';
+      case VoiceErrorType.audioHardware:
+        return 'تعذّر الوصول إلى الميكروفون، تأكد أنه غير مستخدم في تطبيق آخر وأنه متصل بشكل صحيح';
+      case VoiceErrorType.permissionDenied:
+        return 'صلاحية الميكروفون مرفوضة، فعّلها من إعدادات الجهاز';
+      case VoiceErrorType.network:
+        return 'تعذّر الاتصال بالسيرفر لتحويل الصوت، تحقق من الإنترنت';
+      case VoiceErrorType.busy:
+        return 'المحرك الصوتي مشغول، حاول مرة أخرى خلال لحظات';
+      case VoiceErrorType.languageUnavailable:
+        return 'اللهجة العربية غير مدعومة على هذا الجهاز، فعّل خدمات Google للتعرف الصوتي';
+      case VoiceErrorType.unknown:
+        return 'حدث خطأ غير متوقع في التعرف الصوتي، حاول مرة أخرى';
+    }
+  }
+}
+
+/// تصنيف رسالة خطأ speech_to_text الخام (مثل error_no_match، error_busy...)
+/// إلى نوع مفهوم يمكن للواجهة التعامل معه برسالة عربية مناسبة.
+/// دالة top-level (وليست method) عمداً كي يسهل اختبارها مباشرة بدون
+/// الحاجة لإنشاء VoiceService حقيقي (الذي يعتمد على plugins منصّة).
+///
+/// ملاحظة: على أندرويد كل الأخطاء تصل بعلامة permanent=true من الـ plugin
+/// نفسه (وليس من نظام التشغيل)، لذا لا نعتمد على permanent لتفسير الخطورة
+/// بل على errorMsg النصي مباشرة.
+VoiceErrorType classifyVoiceError(String errorMsg) {
+  switch (errorMsg) {
+    case 'error_no_match':
+    case 'error_speech_timeout':
+      // غالباً بسبب ضوضاء عالية تُغرق الصوت، أو صمت تام، أو نطق غير واضح
+      return VoiceErrorType.noSpeechDetected;
+    case 'error_audio_error':
+    case 'error_client':
+      // مشكلة في التقاط الصوت من الهاردوير — غالباً انقطاع/عطل الميكروفون
+      return VoiceErrorType.audioHardware;
+    case 'error_permission':
+      return VoiceErrorType.permissionDenied;
+    case 'error_network':
+    case 'error_network_timeout':
+    case 'error_server':
+    case 'error_server_disconnected':
+      return VoiceErrorType.network;
+    case 'error_busy':
+    case 'error_too_many_requests':
+      return VoiceErrorType.busy;
+    case 'error_language_not_supported':
+    case 'error_language_unavailable':
+      return VoiceErrorType.languageUnavailable;
+    default:
+      return VoiceErrorType.unknown;
+  }
+}
 
 /// Voice recording + on-device speech-to-text service.
 /// Strategy:
@@ -38,9 +131,59 @@ class VoiceService {
   bool get speechAvailable => _speechAvailable;
   bool get isInitialized => _initialized;
 
+  // آخر خطأ صوتي مُصنَّف — يمكن لواجهة المستخدم قراءته بعد initSpeech()
+  // أو أثناء الاستماع لعرض رسالة عربية مناسبة (ضوضاء عالية / انقطاع الميكروفون...).
+  VoiceErrorType? _lastErrorType;
+  VoiceErrorType? get lastErrorType => _lastErrorType;
+
+  // استدعاء اختياري تُبلَّغ به الواجهة فور وقوع خطأ أثناء التعرف الصوتي
+  // (مفيد لعرض SnackBar/Toast فوري بدل انتظار نهاية الجلسة).
+  void Function(VoiceErrorType type, String rawMessage)? onVoiceError;
+
+  /// طلب صلاحية الميكروفون مع تمييز دقيق بين:
+  /// - granted: مُنحت الصلاحية
+  /// - denied: رُفضت لكن يمكن إعادة الطلب لاحقاً
+  /// - permanentlyDenied: رُفضت نهائياً (المستخدم اختار "عدم السؤال مجدداً")
+  ///   ولا يمكن إعادة الطلب برمجياً — يجب توجيه المستخدم لإعدادات النظام
+  ///   عبر openAppSettings().
+  /// - restricted/limited: قيود على مستوى النظام (نادر على أندرويد، أكثر شيوعاً على iOS)
+  Future<MicPermissionResult> requestMicPermission() async {
+    var status = await Permission.microphone.status;
+    if (status.isGranted) return MicPermissionResult.granted;
+
+    // لا تطلب مجدداً إذا كانت مرفوضة نهائياً — iOS/Android يتجاهلان الطلب
+    // في هذه الحالة، والطلب المتكرر قد يُخفي حالة "مرفوض دائماً" الحقيقية.
+    if (status.isPermanentlyDenied) {
+      return MicPermissionResult.permanentlyDenied;
+    }
+
+    status = await Permission.microphone.request();
+    if (status.isGranted) return MicPermissionResult.granted;
+    if (status.isPermanentlyDenied) {
+      return MicPermissionResult.permanentlyDenied;
+    }
+    if (status.isRestricted || status.isLimited) {
+      return MicPermissionResult.restricted;
+    }
+    return MicPermissionResult.denied;
+  }
+
+  /// دالة توافقية قديمة (bool فقط) — أُبقيت لعدم كسر أي استدعاء قديم،
+  /// لكن يُفضّل استخدام requestMicPermission() للحصول على تفاصيل أدق.
   Future<bool> requestPermissions() async {
-    final mic = await Permission.microphone.request();
-    return mic.isGranted;
+    final result = await requestMicPermission();
+    return result == MicPermissionResult.granted;
+  }
+
+  /// فتح إعدادات النظام مباشرة لتمكين المستخدم من منح صلاحية الميكروفون
+  /// يدوياً بعد الرفض الدائم (permanentlyDenied).
+  Future<bool> openSystemSettings() async {
+    try {
+      return await openAppSettings();
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'VoiceService.openSystemSettings');
+      return false;
+    }
   }
 
   /// Initialize the speech recognizer once. Subsequent calls are no-ops.
@@ -55,9 +198,26 @@ class VoiceService {
             _isListening = false;
           }
         },
-        onError: (e) {
-          // Don't crash on transient errors. Mark as not listening.
+        onError: (SpeechRecognitionError e) {
+          // لا تنهار على أخطاء عابرة، لكن صنّف الخطأ وأبلغ الواجهة به
+          // حتى تعرض رسالة عربية دقيقة (ضوضاء/انقطاع ميكروفون/صلاحيات...).
           _isListening = false;
+          _lastErrorType = classifyVoiceError(e.errorMsg);
+          try {
+            onVoiceError?.call(_lastErrorType!, e.errorMsg);
+          } catch (_) {
+            // تجاهل أي خطأ من الـ callback الخارجي كي لا يُسقط الخدمة
+          }
+          // أنهِ أي جلسة استماع نشطة فوراً بدل الانتظار حتى safety timeout —
+          // هذا يجعل الواجهة تستجيب مباشرة (خصوصاً في حالة انقطاع الميكروفون
+          // أو ضوضاء عالية جداً بدل تجميد الشاشة لثوانٍ إضافية بلا داعٍ).
+          _safetyTimer?.cancel();
+          _safetyTimer = null;
+          if (_activeCompleter != null && !_activeCompleter!.isCompleted) {
+            final c = _activeCompleter!;
+            _activeCompleter = null;
+            c.complete('');
+          }
         },
         debugLogging: false,
       );
@@ -213,6 +373,11 @@ class VoiceService {
   // ============ File Recording (for server-side Whisper) ============
   Future<String> startRecording() async {
     if (!await _recorder.hasPermission()) {
+      // تحقّق من حالة الصلاحية الدقيقة لإعطاء المستخدم رسالة قابلة للتصرف
+      final status = await Permission.microphone.status;
+      if (status.isPermanentlyDenied) {
+        throw 'صلاحية الميكروفون مرفوضة نهائياً، افتح إعدادات التطبيق لتفعيلها';
+      }
       throw 'صلاحية الميكروفون مرفوضة';
     }
     final dir = await getApplicationDocumentsDirectory();

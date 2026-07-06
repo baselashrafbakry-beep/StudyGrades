@@ -105,21 +105,141 @@ class _GradingScreenState extends State<GradingScreen> {
   @override
   void dispose() {
     _autoLoopActive = false;
+    // فكّ ربط استدعاء الأخطاء الصوتية قبل التخلص من الشاشة لمنع استدعاء
+    // _toast() على شاشة لم تعد موجودة (الـ voiceService عبارة عن singleton
+    // يعيش أطول من عمر هذه الشاشة).
+    voiceService.onVoiceError = null;
     voiceService.cancelListening();
     super.dispose();
   }
 
   Future<void> _initVoice() async {
-    final granted = await voiceService.requestPermissions();
-    if (!granted) {
-      _toast('برجاء السماح باستخدام الميكروفون', error: true);
-      return;
+    final result = await voiceService.requestMicPermission();
+    if (!mounted) return;
+
+    switch (result) {
+      case MicPermissionResult.granted:
+        break; // تابع التهيئة العادية أدناه
+      case MicPermissionResult.permanentlyDenied:
+        // رُفضت الصلاحية نهائياً — لا فائدة من طلبها مجدداً برمجياً،
+        // يجب توجيه المستخدم لإعدادات النظام يدوياً.
+        await _showMicPermissionSettingsDialog();
+        return;
+      case MicPermissionResult.restricted:
+        _toast(
+          'الميكروفون غير متاح على هذا الجهاز بسبب قيود النظام',
+          error: true,
+        );
+        return;
+      case MicPermissionResult.denied:
+        _toast('برجاء السماح باستخدام الميكروفون', error: true);
+        return;
     }
+
+    // اربط استدعاء الأخطاء الصوتية الفورية (ضوضاء/انقطاع ميكروفون/شبكة...)
+    // كي تظهر رسالة عربية واضحة للمستخدم بمجرد وقوع الخطأ، بدل انتظار
+    // نهاية الجلسة بصمت.
+    voiceService.onVoiceError = (type, rawMessage) {
+      if (!mounted) return;
+      // لا نُضايق المستخدم برسالة "لم يُسمع كلام" إذا لم يكن الوضع
+      // التلقائي أو التسجيل شغّالاً أصلاً (مثلاً بعد إيقاف الجلسة).
+      if (!_autoLoopActive && !voiceService.isRecording) return;
+      _toast(type.arabicMessage, error: true);
+    };
+
     await voiceService.initSpeech();
     if (mounted) {
       // Force rebuild so first-empty field gets highlighted
       setState(() => _resetFieldFocus(toFirstEmpty: true));
     }
+  }
+
+  /// حوار يوضّح للمستخدم أن صلاحية الميكروفون مرفوضة نهائياً، مع زر
+  /// مباشر لفتح إعدادات التطبيق لتفعيلها يدوياً.
+  Future<void> _showMicPermissionSettingsDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.mic_off_rounded,
+                    color: AppColors.error,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'صلاحية الميكروفون مرفوضة',
+                  style: GoogleFonts.cairo(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'لا يمكن استخدام الرصد الصوتي بدون صلاحية الميكروفون.\n'
+                  'برجاء فتح إعدادات التطبيق وتفعيل صلاحية الميكروفون يدوياً.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cairo(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'لاحقاً',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await voiceService.openSystemSettings();
+                        },
+                        child: Text(
+                          'افتح الإعدادات',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _toast(String msg, {bool error = false, bool success = false}) {
