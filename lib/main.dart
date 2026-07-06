@@ -11,6 +11,7 @@ import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/admin_service.dart';
 import 'services/connectivity_service.dart';
+import 'services/hive_encryption_service.dart';
 import 'services/subscription_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/error_handler.dart';
@@ -127,7 +128,17 @@ Future<void> _initStorageSafe() async {
 }
 
 Future<void> _initStorage() async {
-  // فتح صناديق Hive الأساسية
+  // فتح صناديق Hive الأساسية — كل صندوق يُفتَح هنا (وهنا فقط) عبر
+  // [HiveEncryptionService.openEncryptedBox] الذي يحدّد الـ cipher لأول
+  // مرة لكل اسم صندوق. أي استدعاء لاحق لنفس الاسم من `StorageService.
+  // init()` أو `AdminService.ensureOpen()` سيجد الصندوق مفتوحاً بالفعل
+  // (`Hive.isBoxOpen()` == true) ولن يعيد فتحه أبداً — لذا لا تعارض في
+  // الـ cipher بين نقاط الفتح المتعددة (راجع توثيق HiveEncryptionService
+  // للتفاصيل الكاملة حول التشفير AES-256 والترحيل الآمن للبيانات القديمة).
+  //
+  // 🆕 admin_analytics_box أُضيف هنا (لم يكن ضمن القائمة المركزية سابقاً؛
+  // كان يُفتَح بشكل كسول ومنفصل داخل AdminService._ensureAnalyticsBoxOpen)
+  // لضمان تطبيق نفس التشفير عليه أيضاً بدلاً من تركه بلا حماية.
   const boxes = [
     'pending_grades_box',
     'settings_box',
@@ -135,10 +146,11 @@ Future<void> _initStorage() async {
     'admin_users_box',
     'admin_settings_box',
     'admin_activity_box',
+    'admin_analytics_box',
   ];
   for (final boxName in boxes) {
     if (!Hive.isBoxOpen(boxName)) {
-      await Hive.openBox(boxName);
+      await HiveEncryptionService.openEncryptedBox(boxName);
     }
   }
 }

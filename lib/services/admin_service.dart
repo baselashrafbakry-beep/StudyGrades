@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import '../models/user_model.dart';
 import '../utils/error_handler.dart';
+import 'hive_encryption_service.dart';
 import 'subscription_service.dart';
 
 /// خدمة إدارة المستخدمين والإعدادات الإدارية محلياً
@@ -13,16 +14,19 @@ class AdminService {
   static const String _settingsBox = 'admin_settings_box';
   static const String _activityBox = 'admin_activity_box';
 
-  /// إنشاء/فتح صناديق Hive
+  /// إنشاء/فتح صناديق Hive — 🔐 عبر HiveEncryptionService لتطبيق تشفير
+  /// AES-256 (Android/iOS) مع ترحيل آمن لأي بيانات قديمة غير مشفَّرة.
+  /// راجع main.dart._initStorage() للنقطة الأساسية لفتح هذه الصناديق؛
+  /// هذا التابع هو مجرد شبكة أمان (isBoxOpen يمنع إعادة الفتح المزدوج).
   static Future<void> ensureOpen() async {
     if (!Hive.isBoxOpen(_usersBox)) {
-      await Hive.openBox(_usersBox);
+      await HiveEncryptionService.openEncryptedBox(_usersBox);
     }
     if (!Hive.isBoxOpen(_settingsBox)) {
-      await Hive.openBox(_settingsBox);
+      await HiveEncryptionService.openEncryptedBox(_settingsBox);
     }
     if (!Hive.isBoxOpen(_activityBox)) {
-      await Hive.openBox(_activityBox);
+      await HiveEncryptionService.openEncryptedBox(_activityBox);
     }
   }
 
@@ -651,7 +655,10 @@ class AdminService {
 
   static Future<void> _ensureAnalyticsBoxOpen() async {
     if (!Hive.isBoxOpen(_analyticsBox)) {
-      await Hive.openBox(_analyticsBox);
+      // 🔐 نفس تشفير AES-256 المطبَّق على باقي صناديق الأدمن — أُضيف
+      // هذا الصندوق أيضاً إلى القائمة المركزية في main.dart._initStorage()
+      // ليُفتَح مشفَّراً منذ بدء التشغيل؛ هذا الاستدعاء هنا شبكة أمان فقط.
+      await HiveEncryptionService.openEncryptedBox(_analyticsBox);
     }
   }
 

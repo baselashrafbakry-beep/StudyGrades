@@ -3,6 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pending_sync.dart';
 import '../utils/error_handler.dart';
+import 'hive_encryption_service.dart';
 
 /// Local storage service using Hive (document) + SharedPreferences (key-value)
 class StorageService {
@@ -18,16 +19,15 @@ class StorageService {
 
   static Future<void> init() async {
     // لا نستدعي Hive.initFlutter() مرة ثانية — تمت في main.dart
-    // نفتح الصناديق فقط إذا لم تكن مفتوحة بالفعل
-    if (!Hive.isBoxOpen(pendingBoxName)) {
-      await Hive.openBox(pendingBoxName);
-    }
-    if (!Hive.isBoxOpen(settingsBoxName)) {
-      await Hive.openBox(settingsBoxName);
-    }
-    if (!Hive.isBoxOpen(classroomCacheBox)) {
-      await Hive.openBox(classroomCacheBox);
-    }
+    // 🔐 الفتح هنا يمر عبر HiveEncryptionService.openEncryptedBox حتى
+    // يُطبَّق تشفير AES-256 حتى في حال استُدعيت init() هذه بشكل مستقل
+    // (كما يحدث في بعض الاختبارات) قبل أن يفتح main.dart الصندوق أصلاً.
+    // إذا كان الصندوق مفتوحاً بالفعل (فُتح من main.dart)، فإن
+    // openEncryptedBox تكتشف ذلك عبر isBoxOpen() ولا تعيد فتحه إطلاقاً —
+    // فلا تعارض في الـ cipher بين نقطتي الفتح.
+    await HiveEncryptionService.openEncryptedBox(pendingBoxName);
+    await HiveEncryptionService.openEncryptedBox(settingsBoxName);
+    await HiveEncryptionService.openEncryptedBox(classroomCacheBox);
     // تهيئة الـ cache عند البدء
     _cachedPendingCount = getPendingSyncs().length;
   }
