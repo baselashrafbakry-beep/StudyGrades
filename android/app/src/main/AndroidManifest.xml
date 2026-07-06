@@ -14,13 +14,22 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
-    <!-- Required to declare microphone hardware feature (optional) -->
+    <!-- ميزة الميكروفون: غير إلزامية (required="false") لأن التطبيق يوفر
+         مساراً بديلاً كاملاً وفعّالاً لإدخال الدرجات يدوياً عبر لوحة
+         المفاتيح (انظر GradeFieldCard.TextField مع keyboardType رقمي) —
+         التسجيل الصوتي ميزة مساعدة اختيارية فقط. لو تُرك required="true"
+         (كما كان سابقاً)، فسيمنع متجر Google Play تثبيت التطبيق تلقائياً
+         على أي جهاز بدون ميكروفون فعلي (بعض الأجهزة اللوحية/التلفزيونات
+         الذكية)، رغم أن التطبيق يعمل بكامل وظائفه بدونه. VoiceService
+         يتعامل بالفعل بأمان مع حالة رفض الصلاحية (denied/permanentlyDenied)
+         ويسمح للمستخدم بالمتابعة يدوياً، لذا لا حاجة لفرض الميزة على مستوى
+         النظام. -->
     <uses-feature
         android:name="android.hardware.microphone"
-        android:required="true" />
+        android:required="false" />
 
     <application
-        android:label="StudyGrades"
+        android:label="Study Grades Voice"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
@@ -59,3 +68,5 @@
         </intent>
     </queries>
 </manifest>
+
+

@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.studygrades.app"
+    namespace = "com.myapp.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.studygrades.app"
+        applicationId = "com.myapp.mobile"
         // App needs minSdk 23+ for speech_to_text, record, and secure storage
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
@@ -86,5 +86,6 @@ android {
 flutter {
     source = "../.."
 }
+
 
 
