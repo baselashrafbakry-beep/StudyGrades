@@ -6,32 +6,12 @@ import '../models/hierarchy_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/grading_provider.dart';
 import '../services/api_client.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
-import 'login_screen.dart';
 import 'subject_selection_screen.dart';
 import 'settings_screen.dart';
 import 'activity_log_screen.dart';
 import 'dashboard_screen.dart';
-import 'grading_screen.dart';
-
-/// شاشة اختيار المادة للعرض التجريبي (بدون API)
-class SubjectSelectionScreenDemo extends StatelessWidget {
-  const SubjectSelectionScreenDemo({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final grading = context.read<GradingProvider>();
-    // بيانات تجريبية جاهزة - انتقل مباشرة لشاشة الرصد
-    if (grading.classroom == null) {
-      grading.loadDemoClassroom(className: 'فصل تجريبي أ', subject: 'عام');
-    }
-    return const GradingScreen(
-      classId: 0,
-      className: 'فصل تجريبي أ',
-      subject: 'عام',
-    );
-  }
-}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -72,45 +52,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ignore: unused_element
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'تأكيد',
-          style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'هل تريد تسجيل الخروج من التطبيق؟',
-          style: GoogleFonts.cairo(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('إلغاء', style: GoogleFonts.cairo()),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('خروج', style: GoogleFonts.cairo()),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    if (!mounted) return;
-    await context.read<AuthProvider>().logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final grading = context.watch<GradingProvider>();
 
@@ -412,69 +357,10 @@ class _HomeScreenState extends State<HomeScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
-            // زر العرض التجريبي
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.info.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.play_circle_outline,
-                          color: AppColors.info, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'تجربة النظام',
-                        style: GoogleFonts.cairo(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.info,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'جرّب الرصد الصوتي بدون اتصال بالسيرفر (بيانات تجريبية)',
-                    style: GoogleFonts.cairo(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      final grading = context.read<GradingProvider>();
-                      grading.loadDemoClassroom(
-                        className: 'فصل تجريبي أ',
-                        subject: 'عام',
-                      );
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SubjectSelectionScreenDemo(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.info,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: Text(
-                      'ابدأ التجربة',
-                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
+            ElevatedButton.icon(
+              onPressed: _fetch,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text('إعادة المحاولة', style: GoogleFonts.cairo()),
             ),
           ],
         ),
@@ -621,7 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Colors.white,
+      color: AppColors.cardBackground,
       borderRadius: BorderRadius.circular(16),
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.08),
@@ -672,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -810,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             height: 80,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppColors.cardBackground,
               borderRadius: BorderRadius.circular(16),
             ),
           ),

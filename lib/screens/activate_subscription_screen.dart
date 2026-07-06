@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:provider/provider.dart';
 import '../models/subscription_model.dart';
 import '../services/subscription_service.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 /// شاشة تفعيل الاشتراك بكود
@@ -62,6 +64,7 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
     final updated = await SubscriptionService.syncWithServer();
     if (updated && mounted) {
       final newSub = await SubscriptionService.getCurrentSubscription();
+      if (!mounted) return;
       setState(() => _currentSub = newSub);
       Fluttertoast.showToast(
         msg: 'تم تحديث اشتراكك تلقائياً من السيرفر 🎉',
@@ -193,6 +196,8 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -268,7 +273,7 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -328,7 +333,7 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -396,6 +401,7 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
                       onPressed: () async {
                         final data =
                             await Clipboard.getData(Clipboard.kTextPlain);
+                        if (!mounted) return;
                         if (data?.text != null) {
                           _codeCtrl.text = data!.text!.trim().toUpperCase();
                           setState(() {});
@@ -528,7 +534,7 @@ class _ActivateSubscriptionScreenState extends State<ActivateSubscriptionScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.cardBackground,
                 borderRadius: BorderRadius.circular(10),
                 border:
                     Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
@@ -766,6 +772,8 @@ class _PlanBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(

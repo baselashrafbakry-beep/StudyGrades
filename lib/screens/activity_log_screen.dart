@@ -6,6 +6,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../models/pending_sync.dart';
 import '../providers/grading_provider.dart';
 import '../services/storage_service.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 /// شاشة سجل النشاطات - عرض المزامنات المعلقة والمكتملة
@@ -134,6 +135,8 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final grading = context.watch<GradingProvider>();
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -317,7 +320,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: AppColors.warning.withValues(alpha: 0.3),
@@ -483,7 +486,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),

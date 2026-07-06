@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 
 /// --------------------------------------------------------------------------
@@ -78,6 +80,8 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -140,6 +144,7 @@ class _LicenseGeneratorScreenState extends State<LicenseGeneratorScreen> {
                   icon: const Icon(Icons.paste_rounded),
                   onPressed: () async {
                     final data = await Clipboard.getData(Clipboard.kTextPlain);
+                    if (!mounted) return;
                     if (data?.text != null) {
                       _deviceIdCtrl.text = data!.text!.trim().toUpperCase();
                       setState(() {});

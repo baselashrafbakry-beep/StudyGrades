@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import '../services/admin_service.dart';
 import '../services/storage_service.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 
@@ -117,6 +119,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final page = _pages[_currentPage];
 
     return Scaffold(

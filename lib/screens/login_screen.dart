@@ -5,8 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
-import '../providers/grading_provider.dart';
 import '../services/admin_service.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
 import 'change_password_screen.dart';
@@ -26,7 +26,6 @@ class _LoginScreenState extends State<LoginScreen>
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _rememberMe = false;
-  bool _showDemoTip = false;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -58,6 +57,7 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _loadRememberedUser() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       final saved = prefs.getString(_rememberKey);
       if (saved != null && saved.isNotEmpty) {
         setState(() {
@@ -207,14 +207,6 @@ class _LoginScreenState extends State<LoginScreen>
       final raw = auth.error ?? 'فشل تسجيل الدخول';
       final friendly = _humanizeError(raw);
       _showErrorDialog(friendly);
-      // إظهار تلميح الوضع التجريبي عند خطأ الاتصال
-      if (raw.toLowerCase().contains('connection') ||
-          raw.toLowerCase().contains('timeout') ||
-          raw.toLowerCase().contains('network') ||
-          raw.toLowerCase().contains('socketexception') ||
-          raw.toLowerCase().contains('no address')) {
-        setState(() => _showDemoTip = true);
-      }
     }
   }
 
@@ -261,42 +253,6 @@ class _LoginScreenState extends State<LoginScreen>
               ),
               textAlign: TextAlign.right,
             ),
-            const SizedBox(height: 16),
-            // زر الوضع التجريبي داخل الحوار عند الخطأ
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(ctx);
-                _enterDemoMode();
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.info.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.info.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.play_circle_outline,
-                        color: AppColors.info, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'جرّب الوضع التجريبي بدون إنترنت',
-                        style: GoogleFonts.cairo(
-                          fontSize: 13,
-                          color: AppColors.info,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
         actions: [
@@ -315,23 +271,10 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  /// الوضع التجريبي — دخول مباشر بدون حساب
-  void _enterDemoMode() {
-    final grading = context.read<GradingProvider>();
-    grading.loadDemoClassroom(className: 'فصل تجريبي أ', subject: 'عام');
-    Fluttertoast.showToast(
-      msg: '🎯 وضع تجريبي — بيانات افتراضية',
-      backgroundColor: AppColors.info,
-      textColor: Colors.white,
-      toastLength: Toast.LENGTH_LONG,
-    );
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final pwdStrength = _passwordStrength(_passCtrl.text);
 
@@ -388,15 +331,8 @@ class _LoginScreenState extends State<LoginScreen>
                       _buildRememberRow(),
                       const SizedBox(height: 24),
                       _buildLoginButton(auth),
-                      // تلميح الوضع التجريبي (يظهر بعد خطأ اتصال)
-                      if (_showDemoTip) ...[
-                        const SizedBox(height: 14),
-                        _buildDemoTip(),
-                      ],
                       const SizedBox(height: 20),
                       _buildServerInfo(),
-                      const Divider(height: 36, thickness: 0.5),
-                      _buildDemoButton(),
                       const SizedBox(height: 24),
                       _buildFooter(),
                     ],
@@ -622,40 +558,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildDemoTip() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOut,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.wifi_off_rounded,
-              color: AppColors.warning, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'مشكلة في الاتصال؟ جرّب الوضع التجريبي أدناه',
-              style: GoogleFonts.cairo(
-                fontSize: 12,
-                color: AppColors.warning,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => setState(() => _showDemoTip = false),
-            child: const Icon(Icons.close, size: 16, color: AppColors.warning),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildServerInfo() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -710,26 +612,6 @@ class _LoginScreenState extends State<LoginScreen>
             tooltip: 'نسخ الرابط',
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDemoButton() {
-    return OutlinedButton.icon(
-      onPressed: _enterDemoMode,
-      style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: AppColors.info),
-        foregroundColor: AppColors.info,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      icon: const Icon(Icons.science_outlined, size: 20),
-      label: Text(
-        'الوضع التجريبي (بدون إنترنت)',
-        style: GoogleFonts.cairo(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
@@ -794,9 +676,6 @@ class _LoginScreenState extends State<LoginScreen>
             const SizedBox(height: 10),
             _helpItem(Icons.admin_panel_settings_outlined,
                 'في حال نسيت كلمة المرور، تواصل مع المدير المسؤول'),
-            const SizedBox(height: 10),
-            _helpItem(Icons.science_outlined,
-                'يمكنك تجربة النظام بدون حساب عبر "الوضع التجريبي"'),
             const Divider(height: 20),
             GestureDetector(
               onTap: () {

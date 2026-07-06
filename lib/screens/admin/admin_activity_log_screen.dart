@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../services/admin_service.dart';
+import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 
 /// شاشة سجل النشاطات الإدارية
@@ -84,6 +86,8 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final df = DateFormat('dd/MM/yyyy - HH:mm', 'ar');
     final types = _activities.map((a) => a['type'] as String).toSet().toList();
 
@@ -119,7 +123,7 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: AppColors.cardBackground,
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
@@ -257,7 +261,7 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
   Widget _buildFilterChips(List<String> types) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      color: Colors.white,
+      color: AppColors.cardBackground,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),

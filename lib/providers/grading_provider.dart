@@ -70,8 +70,7 @@ class GradingProvider extends ChangeNotifier {
   }
 
   /// يحقن فصلاً دراسياً جاهزاً مباشرةً في الاختبارات (بدلاً من
-  /// المرور عبر loadClassroom() التي تتطلب اتصال شبكة حقيقي، أو
-  /// loadDemoClassroom() المُقفلة دائماً على classId=0).
+  /// المرور عبر loadClassroom() التي تتطلب اتصال شبكة حقيقي).
   @visibleForTesting
   void debugSetClassroom(ClassroomData data) {
     _classroom = data;
@@ -270,56 +269,6 @@ class GradingProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
-  /// تحميل بيانات تجريبية بدون API (للاختبار والعرض)
-  void loadDemoClassroom({
-    required String className,
-    required String subject,
-  }) {
-    const fields = [
-      {'name': 'oral', 'label': 'شفهي', 'max': 15.0},
-      {'name': 'written', 'label': 'تحريري', 'max': 25.0},
-      {'name': 'activity', 'label': 'نشاط', 'max': 10.0},
-    ];
-
-    final students = List.generate(10, (i) {
-      final num = (i + 1).toString().padLeft(3, '0');
-      return {
-        'id': i + 1,
-        'student_number': num,
-        'name': _demoNames[i % _demoNames.length],
-        'existing_grades': {},
-      };
-    });
-
-    _classroom = ClassroomData.fromJson(
-      {
-        'class_id': 0,
-        'class_name': className,
-        'subject': subject,
-        'grade_structure': fields,
-        'students': students,
-      },
-      className: className,
-      subject: subject,
-    );
-    _currentIndex = 0;
-    _error = null;
-    notifyListeners();
-  }
-
-  static const _demoNames = [
-    'أحمد محمد علي',
-    'فاطمة أحمد حسن',
-    'محمود عبد الله',
-    'مريم يوسف إبراهيم',
-    'علي حسن مصطفى',
-    'نورا إبراهيم سالم',
-    'كريم سمير عمر',
-    'رنا طارق محمد',
-    'عمر خالد عبد الرحمن',
-    'هدى سعيد عثمان',
-  ];
 
   void updateGrade(int studentIdx, String fieldName, double value) {
     if (_classroom == null) return;

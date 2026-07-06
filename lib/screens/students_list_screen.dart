@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/student_model.dart';
 import '../providers/grading_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 /// شاشة قائمة الطلاب — تعرض جميع الطلاب مع درجاتهم وتسمح بالتنقل السريع
@@ -27,6 +28,8 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final grading = context.watch<GradingProvider>();
     final allStudents = grading.students;
     final fields = grading.fields;
@@ -177,7 +180,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
 
   Widget _buildSearchAndFilters() {
     return Container(
-      color: Colors.white,
+      color: AppColors.cardBackground,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
       child: Column(
         children: [
@@ -327,7 +330,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isCurrent ? AppColors.primary : Colors.grey.shade200,

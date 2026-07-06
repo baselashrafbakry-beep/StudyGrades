@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
+import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 
 /// شاشة إدارة المستخدمين - مخصصة للمطور والمدير
@@ -79,6 +80,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.user;
 
@@ -169,7 +172,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   Widget _buildSearchAndFilters() {
     return Container(
       padding: const EdgeInsets.all(12),
-      color: Colors.white,
+      color: AppColors.cardBackground,
       child: Column(
         children: [
           TextField(
@@ -251,7 +254,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       margin: const EdgeInsets.fromLTRB(14, 12, 14, 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.withValues(alpha: 0.15)),
       ),
@@ -332,7 +335,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: user.isActive
@@ -730,6 +733,15 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
         ),
       ),
     );
+
+    // التخلص من كل الـ controllers بعد إغلاق الحوار لمنع تسرّب الذاكرة
+    // (memory leak) — كانت هذه الكائنات تُنشأ في كل استدعاء لهذه الدالة
+    // دون أي استدعاء لـ dispose() بعد الاستخدام.
+    usernameCtrl.dispose();
+    emailCtrl.dispose();
+    fullNameCtrl.dispose();
+    phoneCtrl.dispose();
+    passwordCtrl.dispose();
   }
 
   Widget _dlgField({
@@ -839,6 +851,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
         ],
       ),
     );
+
+    // منع تسرّب الذاكرة: التخلص من الـ controller بعد إغلاق الحوار.
+    ctrl.dispose();
   }
 
   Future<void> _confirmDelete(User user, User? currentUser) async {

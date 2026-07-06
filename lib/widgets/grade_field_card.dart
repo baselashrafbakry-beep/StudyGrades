@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../models/student_model.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 class GradeFieldCard extends StatefulWidget {
@@ -55,6 +57,8 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<
+        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final hasValue = widget.value != null;
     final percent = hasValue && widget.field.max > 0
         ? (widget.value! / widget.field.max).clamp(0.0, 1.0)
@@ -74,7 +78,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
       decoration: BoxDecoration(
         color: widget.isHighlighted
             ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : Colors.white,
+            : AppColors.cardBackground,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color:
