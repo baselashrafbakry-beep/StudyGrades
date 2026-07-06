@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../services/voice_service.dart';
 import '../services/nlp_parser.dart';
 import '../services/analytics_service.dart';
+import '../services/pdf_export_service.dart';
 import '../services/subscription_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
@@ -961,6 +962,123 @@ class _GradingScreenState extends State<GradingScreen> {
     }
   }
 
+  /// تصدير كشف الدرجات كملف PDF رسمي — يعمل عبر جميع المنصات (موبايل +
+  /// ويب) بعكس Excel الذي يتحول تلقائياً لـ CSV على الويب. يخضع لنفس قيد
+  /// الاشتراك المستخدم في تصدير Excel ('export_excel') حتى لا يصبح تصدير
+  /// PDF ثغرة تلتف حول قيود الباقة المجانية.
+  Future<void> _exportPdf() async {
+    final grading = context.read<GradingProvider>();
+    final auth = context.read<AuthProvider>();
+    if (grading.students.isEmpty) {
+      _toast('لا يوجد طلاب للتصدير', error: true);
+      return;
+    }
+    if (grading.fields.isEmpty) {
+      _toast(
+        'تنبيه: لا توجد بنود تقييم لهذه المادة — سيتم تصدير كشف بأسماء الطلاب فقط بدون درجات',
+        error: true,
+      );
+    }
+    final allowed = await SubscriptionService.hasFeature('export_excel');
+    if (!mounted) return;
+    if (!allowed) {
+      await UpgradeRequiredDialog.show(
+        context,
+        featureNameAr: 'تصدير PDF',
+        requiredPlanAr: 'احترافي',
+        icon: Icons.picture_as_pdf_rounded,
+      );
+      return;
+    }
+    if (_autoLoopActive) await _stopAutoLoop(silent: true);
+    _toast('جاري إعداد ملف PDF للتصدير...');
+    final ok = await PdfExportService.exportToPdf(
+      students: grading.students,
+      fields: grading.fields,
+      className: widget.className,
+      subject: widget.subject,
+      teacherName: auth.user?.displayName,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      _toast('فشل التصدير — حاول مرة أخرى', error: true);
+    } else {
+      AdminService.trackEvent('pdf_export_completed');
+      _toast('تم التصدير بنجاح ✅', success: true);
+    }
+  }
+
+  /// شيت اختيار صيغة التصدير (Excel / PDF) — يُستدعى من كل نقاط الدخول
+  /// السابقة التي كانت تستدعي _exportExcel() مباشرة، لإتاحة PDF كصيغة
+  /// موازية دون إضافة أزرار جديدة تُثقل الواجهة.
+  void _showExportOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                'اختر صيغة التصدير',
+                style: GoogleFonts.cairo(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.table_chart_rounded,
+                    color: AppColors.success),
+                title: Text('تصدير Excel', style: GoogleFonts.cairo()),
+                subtitle: Text(
+                  'ملف قابل للتحرير مطابق للنموذج الرسمي',
+                  style: GoogleFonts.cairo(
+                      fontSize: 12, color: AppColors.textSecondary),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _exportExcel();
+                },
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.picture_as_pdf_rounded, color: Colors.red),
+                title: Text('تصدير PDF', style: GoogleFonts.cairo()),
+                subtitle: Text(
+                  'جاهز للطباعة والمشاركة على جميع الأجهزة',
+                  style: GoogleFonts.cairo(
+                      fontSize: 12, color: AppColors.textSecondary),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _exportPdf();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showStats() {
     final grading = context.read<GradingProvider>();
     final stats = AnalyticsService.calculate(grading.students, grading.fields);
@@ -1113,11 +1231,11 @@ class _GradingScreenState extends State<GradingScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _exportExcel,
-                                icon: const Icon(Icons.table_chart_rounded,
+                                onPressed: _showExportOptions,
+                                icon: const Icon(Icons.ios_share_rounded,
                                     size: 18),
                                 label: Text(
-                                  'تصدير Excel',
+                                  'تصدير الكشف',
                                   style: GoogleFonts.cairo(
                                       fontWeight: FontWeight.bold),
                                 ),
@@ -1863,9 +1981,9 @@ class _GradingScreenState extends State<GradingScreen> {
             ),
             const SizedBox(width: 6),
             _circleBtn(
-              icon: Icons.table_chart_rounded,
-              tooltip: 'تصدير Excel',
-              onTap: _exportExcel,
+              icon: Icons.ios_share_rounded,
+              tooltip: 'تصدير الكشف',
+              onTap: _showExportOptions,
               color: AppColors.success,
             ),
             const SizedBox(width: 6),
@@ -2184,8 +2302,11 @@ class _HelpSheet extends StatelessWidget {
               AppColors.info,
             ),
             _section(
-              '📊 تصدير Excel الرسمي',
-              'يقوم التطبيق بتصدير ملف Excel احترافي مطابق لورقة الرصد الرسمية:\n'
+              '📊 تصدير Excel / PDF الرسمي',
+              'يقوم التطبيق بتصدير كشف درجات احترافي مطابق لورقة الرصد الرسمية '
+                  'بصيغتين حسب اختيارك:\n'
+                  '• Excel: ملف قابل للتحرير (.xlsx)\n'
+                  '• PDF: جاهز للطباعة والمشاركة الفورية على أي جهاز\n'
                   '• اسم المدرسة، الصف، المادة، المعلم، التاريخ\n'
                   '• حدود ملونة وألوان متناوبة للصفوف\n'
                   '• صف الدرجة العظمى لكل بند\n'
