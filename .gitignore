@@ -43,7 +43,15 @@ key.properties
 
 # Local dev artifacts
 server.log
+*.log
+fallback.log
 upload_files/
+
+# Backup / snapshot files (git history already preserves old versions)
+*.backup
+*.original
+.pub-cache-policy
+.pub-resolve-policy
 
 # Distributed release binaries (APK/AAB) — regeneratable via flutter build,
 # should not bloat the git repository with large binary files.

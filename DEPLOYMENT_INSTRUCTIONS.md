@@ -18,14 +18,16 @@
 3. **إعدادات الخدمة:**
    - **Name**: `studygrades-backend`
    - **Environment**: `Docker`
-   - **Build Command**: `flutter pub get && flutter build web`
-   - **Start Command**: `flutter run -d web`
+   - **Build Command**: `flutter pub get && flutter build web --release`
+   - **Start Command**: `python3 -m http.server $PORT --directory build/web --bind 0.0.0.0`
+   > ⚠️ **ملاحظة مهمة**: `flutter run -d web` هو أمر تطوير (dev mode) فقط ولا يصلح للإنتاج — يجب بناء المشروع أولاً (`flutter build web --release`) ثم تقديم محتوى `build/web` عبر خادم ملفات ثابتة (Static File Server) كما هو موضح أعلاه.
 
 4. **متغيرات البيئة:**
    ```
    FLUTTER_ENV=production
-   API_URL=https://your-api.render.com
+   API_URL=<ضع رابط الـ Backend الفعلي هنا>
    ```
+   > ⚠️ يجب استبدال `API_URL` بعنوان الـ Backend الفعلي والمُتحقق منه؛ الروابط النائبة (placeholder) لا تعمل.
 
 5. **النشر:**
    - اضغط "Deploy"
@@ -49,13 +51,13 @@
    - اختر مستودع `StudyGrades`
 
 3. **إعدادات البناء:**
-   - **Build command**: `flutter build web`
+   - **Build command**: `flutter build web --release`
    - **Publish directory**: `build/web`
 
 4. **متغيرات البيئة:**
    ```
    FLUTTER_ENV=production
-   API_URL=https://your-api.render.com
+   API_URL=<ضع رابط الـ Backend الفعلي هنا>
    ```
 
 5. **النشر:**
@@ -193,5 +195,5 @@ flutter run -d iPhone
 
 ---
 
-**تم التحديث:** مايو 2026
-**الإصدار:** 1.0.0
+**تم التحديث:** يوليو 2026
+**الإصدار:** 2.0.0
