@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.voicegrader" "\0"
-            VALUE "FileDescription", "voice_grader" "\0"
+            VALUE "CompanyName", "StudyGrades 2026" "\0"
+            VALUE "FileDescription", "StudyGrades" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "voice_grader" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.voicegrader. All rights reserved." "\0"
-            VALUE "OriginalFilename", "voice_grader.exe" "\0"
-            VALUE "ProductName", "voice_grader" "\0"
+            VALUE "InternalName", "study_grades_voice" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 StudyGrades 2026. All rights reserved." "\0"
+            VALUE "OriginalFilename", "study_grades_voice.exe" "\0"
+            VALUE "ProductName", "StudyGrades" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
