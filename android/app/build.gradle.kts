@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.myapp.mobile"
+    namespace = "com.studygrades.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.myapp.mobile"
+        applicationId = "com.studygrades.app"
         // App needs minSdk 23+ for speech_to_text, record, and secure storage
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
@@ -81,11 +81,30 @@ android {
             )
         }
     }
+
+    // ✅ تحسين حجم التطبيق (App Size Optimization) بطريقة آمنة تماماً:
+    // تقسيم APK حسب معمارية المعالج (ABI) بدلاً من "universal APK" واحد
+    // يحوي كل المعماريات معاً (armeabi-v7a + arm64-v8a + x86_64). هذا
+    // يقلّل حجم الملف الذي يُنزّله المستخدم النهائي بنسبة تصل لـ ~60%
+    // دون أي تأثير على كود التطبيق أو الـ reflection (بعكس isMinifyEnabled
+    // المُعطَّل عمداً أعلاه لأسباب موثَّقة). مهم بشكل خاص لأن ملف الإعداد
+    // التجاري (StudyGrades-commercial.env) يحدد DISTRIBUTION_CHANNEL=direct
+    // — أي توزيع مباشر لملف APK للمستخدم (ليس عبر Google Play الذي يُوزّع
+    // تلقائياً الـ ABI المناسب من AAB بدون الحاجة لهذا التقسيم اليدوي).
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true // يُنتج أيضاً نسخة شاملة كخيار احتياطي متوافق مع كل الأجهزة
+        }
+    }
 }
 
 flutter {
     source = "../.."
 }
+
 
 
 

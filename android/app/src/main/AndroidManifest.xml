@@ -29,7 +29,7 @@
         android:required="false" />
 
     <application
-        android:label="Study Grades Voice"
+        android:label="StudyGrades"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
@@ -68,5 +68,6 @@
         </intent>
     </queries>
 </manifest>
+
 
 

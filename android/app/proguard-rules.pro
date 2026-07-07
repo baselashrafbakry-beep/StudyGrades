@@ -72,7 +72,7 @@
 -dontwarn org.openjsse.**
 
 # Keep model classes (data classes)
--keep class com.voicegrader.grader.models.** { *; }
+-keep class com.studygrades.app.models.** { *; }
 
 # ────────── COMPREHENSIVE PROGUARD RULES (FINAL) ──────────
 

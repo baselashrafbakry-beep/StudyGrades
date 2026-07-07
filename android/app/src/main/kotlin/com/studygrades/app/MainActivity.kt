@@ -1,6 +1,5 @@
-package com.myapp.mobile
+package com.studygrades.app
 
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity()
-
