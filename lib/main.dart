@@ -22,13 +22,20 @@ import 'utils/error_handler.dart';
 /// الإصدار: 2.0.0
 /// ═══════════════════════════════════════════════════
 void main() async {
+  // 0. يجب تهيئة WidgetsFlutterBinding أولاً وقبل أي استدعاء آخر —
+  // ErrorHandler.install() يصل إلى WidgetsBinding.instance، وإن نُودي
+  // قبل ensureInitialized() فسينهار التطبيق فوراً في وضع release بخطأ
+  // "Null check operator used on a null value" (لأن assert التحقق من
+  // التهيئة يُحذَف في release، فيتحول الفحص إلى null-check صريح ينهار).
+  // هذا كان يسبب توقف التطبيق بالكامل عن الإقلاع على الويب (شاشة
+  // "جاري تحميل التطبيق..." تبقى للأبد لأن Flutter لا يرسم أي إطار).
+  WidgetsFlutterBinding.ensureInitialized();
+
   // 1. تثبيت معالج الأخطاء العالمي أولاً
   ErrorHandler.install();
 
   // 2. تشغيل التطبيق داخل Zone آمنة لالتقاط أي استثناء غير معالج
   ErrorHandler.runGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-
     // 3. تهيئة الاتجاه - portrait فقط للتطبيق المحمول
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
