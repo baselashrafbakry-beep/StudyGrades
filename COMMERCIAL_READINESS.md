@@ -51,7 +51,8 @@ Supported statuses:
   renew without manual intervention.
 - Class student count is capped by plan and larger classes are trimmed in-app.
 - Offline pending sync queue is capped by plan.
-- Whisper AI server transcription is gated by plan.
+- Whisper AI server transcription is fail-closed until a production provider
+  and endpoint are configured. Device speech recognition remains available.
 - Excel export is gated by plan.
 - User management is gated by role and plan.
 
@@ -112,6 +113,9 @@ changes.
 - Paymob card integration: `5344998`
 - Webhook: `https://studygrades-2026.netlify.app/api/mobile/billing/paymob/webhook/`
 - Payment return: `https://studygrades-2026.netlify.app/api/mobile/billing/paymob/return/`
+- Privacy policy: `https://studygrades-2026.netlify.app/privacy.html`
+- Terms: `https://studygrades-2026.netlify.app/terms.html`
+- Support: `https://studygrades-2026.netlify.app/support.html`
 - Paymob automatic callback retry is enabled.
 - Settlement beneficiary and Vodafone Cash customer-payment activation remain
   pending written confirmation from Paymob support. Do not release paid sales or

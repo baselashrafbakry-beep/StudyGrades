@@ -3,6 +3,8 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/legal_links.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_client.dart';
 import '../theme/app_theme.dart';
@@ -614,11 +616,26 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         actions: [
           TextButton(
+            onPressed: () => _openExternal(LegalLinks.privacy),
+            child: Text('الخصوصية', style: GoogleFonts.cairo()),
+          ),
+          TextButton(
+            onPressed: () => _openExternal(LegalLinks.terms),
+            child: Text('الشروط', style: GoogleFonts.cairo()),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text('حسناً', style: GoogleFonts.cairo()),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openExternal(Uri uri) async {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      Fluttertoast.showToast(msg: 'تعذر فتح الرابط حالياً');
+    }
   }
 }

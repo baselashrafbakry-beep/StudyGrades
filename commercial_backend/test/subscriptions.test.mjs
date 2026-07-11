@@ -70,3 +70,17 @@ test("legacy non-developer records remain unlicensed", () => {
   assert.equal(entitlement.plan, "trial");
   assert.equal(entitlement.is_usable, false);
 });
+
+test("server transcription fails closed until a provider is available", () => {
+  const entitlement = entitlementForUser({
+    role: "teacher",
+    subscription: {
+      plan: "professional",
+      status: "active",
+      expires_at: "2099-01-01T00:00:00.000Z",
+      limits: { server_transcription: true },
+    },
+  });
+
+  assert.equal(entitlement.limits.server_transcription, false);
+});

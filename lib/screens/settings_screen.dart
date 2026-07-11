@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../config/legal_links.dart';
 import '../models/user_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/grading_provider.dart';
@@ -302,6 +303,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: AppColors.textHint,
                     ),
                     onTap: () => _showHelpDialog(),
+                  ),
+                  _settingTile(
+                    icon: Icons.privacy_tip_outlined,
+                    iconColor: AppColors.info,
+                    title: 'سياسة الخصوصية',
+                    subtitle: 'كيفية حماية واستخدام البيانات',
+                    trailing: const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 18,
+                      color: AppColors.textHint,
+                    ),
+                    onTap: () => _openExternal(LegalLinks.privacy),
+                  ),
+                  _settingTile(
+                    icon: Icons.gavel_outlined,
+                    iconColor: AppColors.textSecondary,
+                    title: 'شروط الاستخدام',
+                    subtitle: 'الشروط المنظمة لاستخدام الخدمة',
+                    trailing: const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 18,
+                      color: AppColors.textHint,
+                    ),
+                    onTap: () => _openExternal(LegalLinks.terms),
+                  ),
+                  _settingTile(
+                    icon: Icons.support_agent_rounded,
+                    iconColor: AppColors.success,
+                    title: 'التواصل مع الدعم',
+                    subtitle: 'إرسال رسالة إلى فريق StudyGrades',
+                    trailing: const Icon(
+                      Icons.email_outlined,
+                      size: 18,
+                      color: AppColors.textHint,
+                    ),
+                    onTap: () => _openExternal(LegalLinks.supportEmail),
                   ),
                   const SizedBox(height: 22),
                   _logoutButton(),
@@ -1325,6 +1362,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _openExternal(Uri uri) async {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      Fluttertoast.showToast(
+        msg: 'تعذر فتح الرابط حالياً',
+        backgroundColor: AppColors.error,
+        textColor: Colors.white,
+      );
+    }
   }
 
   Widget _helpRow(String emoji, String text) {

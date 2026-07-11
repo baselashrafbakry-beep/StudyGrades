@@ -42,7 +42,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
     final supportEmail =
         await AdminService.getSystemSetting<String>(
           'support_email',
-          defaultValue: 'basel.ashraf@studygrades.com',
+          defaultValue: 'baselashraf.bakry@gmail.com',
         ) ??
         '';
     final maintenanceMode =

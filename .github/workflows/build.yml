@@ -126,3 +126,12 @@ jobs:
 
           return_headers="$(curl --fail --silent --show-error --head "https://studygrades-2026.netlify.app/api/mobile/billing/paymob/return/")"
           grep -qi '^content-security-policy:' <<<"$return_headers"
+
+          for page in privacy.html terms.html support.html; do
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              --dump-header "/tmp/$page.headers" \
+              "https://studygrades-2026.netlify.app/$page" \
+              --output "/tmp/$page"
+            grep -qi '^content-security-policy:' "/tmp/$page.headers"
+          done
+          grep -q '<html lang="ar" dir="rtl">' /tmp/privacy.html

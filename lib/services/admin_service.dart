@@ -59,7 +59,7 @@ class AdminService {
       final developer = User(
         id: 1,
         username: 'basel',
-        email: 'basel.ashraf@studygrades.com',
+        email: 'baselashraf.bakry@gmail.com',
         role: UserRole.developer,
         fullName: 'م/ باسل أشرف',
         phone: '',
