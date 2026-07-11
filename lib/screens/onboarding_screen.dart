@@ -50,7 +50,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.share_rounded,
       title: 'تصدير ومشاركة',
       description:
-          'صدّر الدرجات بصيغة CSV، شاركها بسهولة مع أولياء الأمور أو الإدارة.',
+          'صدّر الدرجات بصيغة Excel أو PDF، وشاركها بسهولة مع أولياء الأمور أو الإدارة.',
       color: AppColors.warning,
       gradient: LinearGradient(
         colors: [Color(0xFFFFA726), Color(0xFFEF6C00)],
@@ -63,9 +63,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _finish() async {
     await StorageService.markIntroSeen();
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   void _next() {
@@ -101,11 +101,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   const Spacer(),
-                  Text(
-                    '${_currentPage + 1} / ${_pages.length}',
-                    style: GoogleFonts.cairo(
-                      color: AppColors.textHint,
-                      fontSize: 13,
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      '${_currentPage + 1} / ${_pages.length}',
+                      style: GoogleFonts.cairo(
+                        color: AppColors.textHint,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
@@ -226,11 +229,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                 ],
               ),
-              child: Icon(
-                page.icon,
-                size: 110,
-                color: Colors.white,
-              ),
+              child: Icon(page.icon, size: 110, color: Colors.white),
             ),
           ),
           const SizedBox(height: 50),

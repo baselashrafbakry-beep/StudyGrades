@@ -45,15 +45,16 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         case _FilterMode.all:
           return true;
         case _FilterMode.completed:
-          return s.grades.length >= fields.length && fields.isNotEmpty;
+          return s.isCompleteFor(fields);
         case _FilterMode.pending:
-          return s.grades.length < fields.length;
+          return !s.isCompleteFor(fields);
         case _FilterMode.passed:
-          return totalPossible > 0 && s.total >= totalPossible * 0.5;
+          return totalPossible > 0 &&
+              s.totalFor(fields) >= totalPossible * 0.5;
         case _FilterMode.failed:
           return totalPossible > 0 &&
               s.grades.isNotEmpty &&
-              s.total < totalPossible * 0.5;
+              s.totalFor(fields) < totalPossible * 0.5;
       }
     }).toList();
 
@@ -70,10 +71,16 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         indexed.sort((a, b) => a.value.name.compareTo(b.value.name));
         break;
       case _SortMode.totalDesc:
-        indexed.sort((a, b) => b.value.total.compareTo(a.value.total));
+        indexed.sort(
+          (a, b) =>
+              b.value.totalFor(fields).compareTo(a.value.totalFor(fields)),
+        );
         break;
       case _SortMode.totalAsc:
-        indexed.sort((a, b) => a.value.total.compareTo(b.value.total));
+        indexed.sort(
+          (a, b) =>
+              a.value.totalFor(fields).compareTo(b.value.totalFor(fields)),
+        );
         break;
     }
 
@@ -149,8 +156,10 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
               ),
               Container(
                 margin: const EdgeInsets.only(left: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -305,21 +314,21 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     double totalPossible,
     GradingProvider grading,
   ) {
+    final studentTotal = student.totalFor(fields);
     final percent = totalPossible > 0
-        ? (student.total / totalPossible).clamp(0.0, 1.0)
+        ? (studentTotal / totalPossible).clamp(0.0, 1.0)
         : 0.0;
     final isCurrent = grading.currentIndex == originalIndex;
-    final completedFields = student.grades.length;
-    final isCompleted =
-        fields.isNotEmpty && completedFields >= fields.length;
+    final completedFields = student.completedFieldCount(fields);
+    final isCompleted = student.isCompleteFor(fields);
 
     final color = !isCompleted
         ? AppColors.textHint
         : percent >= 0.7
-            ? AppColors.success
-            : percent >= 0.5
-                ? AppColors.warning
-                : AppColors.error;
+        ? AppColors.success
+        : percent >= 0.5
+        ? AppColors.warning
+        : AppColors.error;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -342,7 +351,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         borderRadius: BorderRadius.circular(14),
         onTap: () {
           grading.setCurrentIndex(originalIndex);
-          Navigator.pop(context);
+          Navigator.pop(context, originalIndex);
         },
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -451,7 +460,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    _fmt(student.total),
+                    _fmt(studentTotal),
                     style: GoogleFonts.cairo(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -487,11 +496,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search_off_rounded,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.search_off_rounded, size: 80, color: Colors.grey.shade400),
           const SizedBox(height: 14),
           Text(
             _search.isNotEmpty

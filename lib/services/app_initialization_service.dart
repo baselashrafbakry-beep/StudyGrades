@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../utils/error_recovery.dart';
 import 'storage_service.dart';
 import 'connectivity_service.dart';
-import 'admin_service.dart';
 
 /// خدمة تهيئة التطبيق الشاملة
 class AppInitializationService {
@@ -33,7 +32,7 @@ class AppInitializationService {
     try {
       await _initializeStorage();
       await _initializeConnectivity();
-      await _initializeAdminService();
+      _initializationLog.add('AdminService deferred until needed');
       await _verifyServices();
 
       _isInitialized = true;
@@ -54,7 +53,7 @@ class AppInitializationService {
   }
 
   Future<void> _initializeStorage() async {
-    if (kDebugMode) debugPrint('[APP_INIT] [1/3] StorageService...');
+    if (kDebugMode) debugPrint('[APP_INIT] [1/2] StorageService...');
     _initializationLog.add('Starting StorageService initialization');
 
     try {
@@ -80,7 +79,7 @@ class AppInitializationService {
   }
 
   Future<void> _initializeConnectivity() async {
-    if (kDebugMode) debugPrint('[APP_INIT] [2/3] ConnectivityService...');
+    if (kDebugMode) debugPrint('[APP_INIT] [2/2] ConnectivityService...');
     _initializationLog.add('Starting ConnectivityService initialization');
 
     try {
@@ -95,37 +94,14 @@ class AppInitializationService {
       );
       _initializationLog.add('✓ ConnectivityService initialized');
     } catch (e, s) {
-      _initializationLog.add('⚠️ ConnectivityService failed (non-critical): $e');
+      _initializationLog.add(
+        '⚠️ ConnectivityService failed (non-critical): $e',
+      );
       // لا نُوقف التطبيق - الاتصال غير حيوي
       errorRecovery.recordError(
         'ConnectivityService initialization failed (non-critical): $e',
         s,
         context: '_initializeConnectivity',
-      );
-    }
-  }
-
-  Future<void> _initializeAdminService() async {
-    if (kDebugMode) debugPrint('[APP_INIT] [3/3] AdminService...');
-    _initializationLog.add('Starting AdminService initialization');
-
-    try {
-      await errorRecovery.retryWithBackoff(
-        () => AdminService.initDefaultDeveloper().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () =>
-              throw TimeoutException('AdminService.initDefaultDeveloper timeout'),
-        ),
-        maxRetries: 2,
-        operationName: 'AdminService.initDefaultDeveloper',
-      );
-      _initializationLog.add('✓ AdminService initialized');
-    } catch (e, s) {
-      _initializationLog.add('⚠️ AdminService failed (non-critical): $e');
-      errorRecovery.recordError(
-        'AdminService initialization failed (non-critical): $e',
-        s,
-        context: '_initializeAdminService',
       );
     }
   }
@@ -138,7 +114,8 @@ class AppInitializationService {
       await StorageService.hasSeenIntro().timeout(const Duration(seconds: 2));
       final isOnline = connectivityService.isOnline;
       _initializationLog.add(
-          '✓ Verification OK (${isOnline ? "Online" : "Offline"})');
+        '✓ Verification OK (${isOnline ? "Online" : "Offline"})',
+      );
     } catch (e, s) {
       _initializationLog.add('⚠️ Verification failed: $e');
       errorRecovery.recordError(

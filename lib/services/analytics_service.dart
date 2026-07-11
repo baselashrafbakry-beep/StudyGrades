@@ -30,15 +30,15 @@ class ClassStats {
   });
 
   factory ClassStats.empty() => ClassStats(
-        totalStudents: 0,
-        completedStudents: 0,
-        completionPercentage: 0,
-        averageScore: 0,
-        successRate: 0,
-        highestScore: 0,
-        lowestScore: 0,
-        totalPossible: 0,
-      );
+    totalStudents: 0,
+    completedStudents: 0,
+    completionPercentage: 0,
+    averageScore: 0,
+    successRate: 0,
+    highestScore: 0,
+    lowestScore: 0,
+    totalPossible: 0,
+  );
 }
 
 /// Service that builds an official Egyptian-style "كشف رصد الدرجات" Excel
@@ -54,29 +54,31 @@ class AnalyticsService {
   static ClassStats calculate(List<Student> students, List<GradeField> fields) {
     if (students.isEmpty || fields.isEmpty) return ClassStats.empty();
 
-    final totalPossible = fields.fold<double>(0, (s, f) => s + f.max);
+    final totalPossible = fields.fold<double>(
+      0,
+      (s, f) => s + (f.max.isFinite && f.max > 0 ? f.max : 0),
+    );
     final totalStudents = students.length;
 
-    final completed = students.where((s) {
-      for (final f in fields) {
-        if (!s.grades.containsKey(f.name)) return false;
-      }
-      return true;
-    }).length;
+    final completed = students.where((s) => s.isCompleteFor(fields)).length;
 
-    final totals = students.map((s) => s.total).toList();
+    final totals = students.map((s) => s.totalFor(fields)).toList();
     final sum = totals.fold<double>(0, (a, b) => a + b);
     final avg = totalStudents > 0 ? sum / totalStudents : 0.0;
 
-    final successful =
-        students.where((s) => s.total >= totalPossible * 0.5).length;
-    final successRate =
-        totalStudents > 0 ? (successful / totalStudents) * 100 : 0.0;
+    final successful = students
+        .where((s) => s.totalFor(fields) >= totalPossible * 0.5)
+        .length;
+    final successRate = totalStudents > 0
+        ? (successful / totalStudents) * 100
+        : 0.0;
 
-    final highest =
-        totals.isEmpty ? 0.0 : totals.reduce((a, b) => a > b ? a : b);
-    final lowest =
-        totals.isEmpty ? 0.0 : totals.reduce((a, b) => a < b ? a : b);
+    final highest = totals.isEmpty
+        ? 0.0
+        : totals.reduce((a, b) => a > b ? a : b);
+    final lowest = totals.isEmpty
+        ? 0.0
+        : totals.reduce((a, b) => a < b ? a : b);
 
     return ClassStats(
       totalStudents: totalStudents,
@@ -87,6 +89,91 @@ class AnalyticsService {
       highestScore: highest,
       lowestScore: lowest,
       totalPossible: totalPossible,
+    );
+  }
+
+  static List<List<int>> _splitCols(int totalCols, int parts) {
+    if (totalCols <= 0 || parts <= 0) return const [];
+    final ranges = <List<int>>[];
+    final base = totalCols ~/ parts;
+    final remainder = totalCols % parts;
+    var start = 0;
+    for (var i = 0; i < parts; i++) {
+      final width = base + (i < remainder ? 1 : 0);
+      if (width <= 0) break;
+      final end = start + width - 1;
+      ranges.add([start, end]);
+      start = end + 1;
+      if (start >= totalCols) break;
+    }
+    return ranges;
+  }
+
+  static void _mergeRange(Sheet sheet, int row, int startCol, int endCol) {
+    if (endCol > startCol) {
+      sheet.merge(
+        CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: row),
+        CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: row),
+      );
+    }
+  }
+
+  static void _writeMergedCell(
+    Sheet sheet, {
+    required int row,
+    required int startCol,
+    required int endCol,
+    required String value,
+    required CellStyle style,
+  }) {
+    if (endCol < startCol) return;
+    _mergeRange(sheet, row, startCol, endCol);
+    final cell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: row),
+    );
+    cell.value = TextCellValue(value);
+    cell.cellStyle = style;
+  }
+
+  static void _writeLabelValuePair(
+    Sheet sheet, {
+    required int row,
+    required int startCol,
+    required int endCol,
+    required String label,
+    required String value,
+    required CellStyle labelStyle,
+    required CellStyle valueStyle,
+  }) {
+    if (endCol < startCol) return;
+    if (endCol == startCol) {
+      _writeMergedCell(
+        sheet,
+        row: row,
+        startCol: startCol,
+        endCol: endCol,
+        value: '$label: $value',
+        style: valueStyle,
+      );
+      return;
+    }
+
+    final labelEndCol = startCol + ((endCol - startCol) ~/ 2);
+    _writeMergedCell(
+      sheet,
+      row: row,
+      startCol: startCol,
+      endCol: labelEndCol,
+      value: label,
+      style: labelStyle,
+    );
+    _writeMergedCell(
+      sheet,
+      row: row,
+      startCol: labelEndCol + 1,
+      endCol: endCol,
+      value: value,
+      style: valueStyle,
     );
   }
 
@@ -269,7 +356,9 @@ class AnalyticsService {
           bold: name,
           fontSize: 11,
           fontFamily: getFontFamily(FontFamily.Arial),
-          horizontalAlign: name ? HorizontalAlign.Right : HorizontalAlign.Center,
+          horizontalAlign: name
+              ? HorizontalAlign.Right
+              : HorizontalAlign.Center,
           verticalAlign: VerticalAlign.Center,
           leftBorder: thinB(),
           rightBorder: thinB(),
@@ -283,8 +372,7 @@ class AnalyticsService {
           backgroundColorHex: ExcelColor.fromHexString(
             zebra ? '#F2F2F2' : '#FFFFFF',
           ),
-          fontColorHex:
-              ExcelColor.fromHexString(pass ? '#0B5394' : '#9C0006'),
+          fontColorHex: ExcelColor.fromHexString(pass ? '#0B5394' : '#9C0006'),
           bold: true,
           fontSize: 11,
           fontFamily: getFontFamily(FontFamily.Arial),
@@ -297,10 +385,7 @@ class AnalyticsService {
         );
       }
 
-      CellStyle gradeBadgeStyle({
-        required bool zebra,
-        required String grade,
-      }) {
+      CellStyle gradeBadgeStyle({required bool zebra, required String grade}) {
         // Color-coded grade text
         String fg;
         switch (grade) {
@@ -407,8 +492,7 @@ class AnalyticsService {
       c = sheet.cell(
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIdx),
       );
-      c.value = TextCellValue(
-          'StudyGrades 2026 - نظام رصد الدرجات الإلكتروني');
+      c.value = TextCellValue('StudyGrades 2026 - نظام رصد الدرجات الإلكتروني');
       c.cellStyle = subTitleStyle;
       sheet.setRowHeight(rowIdx, 22);
       rowIdx++;
@@ -424,36 +508,18 @@ class AnalyticsService {
         ['تاريخ الرصد', dateStr],
       ];
 
-      final pairWidth = (totalCols / infoPairs.length).floor();
-      for (var i = 0; i < infoPairs.length; i++) {
-        final startCol = i * pairWidth;
-        final endCol = (i == infoPairs.length - 1)
-            ? lastColIndex
-            : startCol + pairWidth - 1;
-        final labelEndCol = startCol + ((endCol - startCol) ~/ 2);
-
-        sheet.merge(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: rowIdx),
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol, rowIndex: rowIdx),
+      final infoRanges = _splitCols(totalCols, infoPairs.length);
+      for (var i = 0; i < infoRanges.length; i++) {
+        _writeLabelValuePair(
+          sheet,
+          row: rowIdx,
+          startCol: infoRanges[i][0],
+          endCol: infoRanges[i][1],
+          label: infoPairs[i][0],
+          value: infoPairs[i][1],
+          labelStyle: infoLabelStyle,
+          valueStyle: infoValueStyle,
         );
-        var lc = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: rowIdx),
-        );
-        lc.value = TextCellValue(infoPairs[i][0]);
-        lc.cellStyle = infoLabelStyle;
-
-        sheet.merge(
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol + 1, rowIndex: rowIdx),
-          CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: rowIdx),
-        );
-        var vc = sheet.cell(
-          CellIndex.indexByColumnRow(
-              columnIndex: labelEndCol + 1, rowIndex: rowIdx),
-        );
-        vc.value = TextCellValue(infoPairs[i][1]);
-        vc.cellStyle = infoValueStyle;
       }
       sheet.setRowHeight(rowIdx, 24);
       rowIdx++;
@@ -477,16 +543,20 @@ class AnalyticsService {
       g1.value = TextCellValue('بيانات الطالب');
       g1.cellStyle = groupHeaderStyle;
 
-      sheet.merge(
-        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
-        CellIndex.indexByColumnRow(
-            columnIndex: 3 + fieldsCount - 1, rowIndex: groupRow),
-      );
-      var g2 = sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
-      );
-      g2.value = TextCellValue('بنود التقييم');
-      g2.cellStyle = groupHeaderStyle;
+      if (fieldsCount > 0) {
+        sheet.merge(
+          CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
+          CellIndex.indexByColumnRow(
+            columnIndex: 3 + fieldsCount - 1,
+            rowIndex: groupRow,
+          ),
+        );
+        var g2 = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: groupRow),
+        );
+        g2.value = TextCellValue('بنود التقييم');
+        g2.cellStyle = groupHeaderStyle;
+      }
 
       sheet.merge(
         CellIndex.indexByColumnRow(columnIndex: totalCol, rowIndex: groupRow),
@@ -568,9 +638,12 @@ class AnalyticsService {
         final s = students[i];
         final zebra = i % 2 == 1;
         final r = rowIdx;
-        final pct = totalPossible > 0 ? (s.total / totalPossible) * 100 : 0;
+        final studentTotal = s.totalFor(fields);
+        final pct = totalPossible > 0
+            ? (studentTotal / totalPossible) * 100
+            : 0;
         final pass = pct >= 50;
-        final grade = _grade(s.total, totalPossible);
+        final grade = _grade(studentTotal, totalPossible);
 
         // Sequence
         var cell = sheet.cell(
@@ -615,10 +688,10 @@ class AnalyticsService {
         cell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: totalCol, rowIndex: r),
         );
-        if (s.total == s.total.roundToDouble()) {
-          cell.value = IntCellValue(s.total.toInt());
+        if (studentTotal == studentTotal.roundToDouble()) {
+          cell.value = IntCellValue(studentTotal.toInt());
         } else {
-          cell.value = DoubleCellValue(s.total);
+          cell.value = DoubleCellValue(studentTotal);
         }
         cell.cellStyle = totalStyle(zebra: zebra, pass: pass);
 
@@ -668,38 +741,23 @@ class AnalyticsService {
       sheet.setRowHeight(rowIdx, 24);
       rowIdx++;
 
-      const perRow = 4; // 4 pairs per row = 8 cells
+      const perRow = 4;
       for (var i = 0; i < statsItems.length; i += perRow) {
         final r = rowIdx;
         final pairs = statsItems.skip(i).take(perRow).toList();
-        final cellsPerPair = (totalCols / perRow).floor();
+        final statRanges = _splitCols(totalCols, pairs.length);
 
-        for (var j = 0; j < pairs.length; j++) {
-          final startCol = j * cellsPerPair;
-          final endCol = (j == pairs.length - 1)
-              ? lastColIndex
-              : startCol + cellsPerPair - 1;
-          final mid = startCol + ((endCol - startCol) ~/ 2);
-
-          sheet.merge(
-            CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: r),
-            CellIndex.indexByColumnRow(columnIndex: mid, rowIndex: r),
+        for (var j = 0; j < statRanges.length; j++) {
+          _writeLabelValuePair(
+            sheet,
+            row: r,
+            startCol: statRanges[j][0],
+            endCol: statRanges[j][1],
+            label: pairs[j][0],
+            value: pairs[j][1],
+            labelStyle: statsLabelStyle,
+            valueStyle: statsValueStyle,
           );
-          var lc = sheet.cell(
-            CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: r),
-          );
-          lc.value = TextCellValue(pairs[j][0]);
-          lc.cellStyle = statsLabelStyle;
-
-          sheet.merge(
-            CellIndex.indexByColumnRow(columnIndex: mid + 1, rowIndex: r),
-            CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: r),
-          );
-          var vc = sheet.cell(
-            CellIndex.indexByColumnRow(columnIndex: mid + 1, rowIndex: r),
-          );
-          vc.value = TextCellValue(pairs[j][1]);
-          vc.cellStyle = statsValueStyle;
         }
         sheet.setRowHeight(r, 22);
         rowIdx++;
@@ -714,49 +772,39 @@ class AnalyticsService {
         'توقيع وكيل المدرسة',
         'توقيع المدير',
       ];
-      final sigWidth = (totalCols / sigPairs.length).floor();
+      final sigRanges = _splitCols(totalCols, sigPairs.length);
 
       // Row of empty (signature lines)
       final lineRow = rowIdx;
-      for (var i = 0; i < sigPairs.length; i++) {
-        final startCol = i * sigWidth;
-        final endCol = (i == sigPairs.length - 1)
-            ? lastColIndex
-            : startCol + sigWidth - 1;
-        sheet.merge(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: lineRow),
-          CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: lineRow),
+      for (var i = 0; i < sigRanges.length; i++) {
+        _writeMergedCell(
+          sheet,
+          row: lineRow,
+          startCol: sigRanges[i][0],
+          endCol: sigRanges[i][1],
+          value: '................................',
+          style: signatureLineStyle,
         );
-        var lc = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: lineRow),
-        );
-        lc.value = TextCellValue('................................');
-        lc.cellStyle = signatureLineStyle;
       }
       sheet.setRowHeight(lineRow, 30);
       rowIdx++;
 
       // Row of labels
       final labelRow = rowIdx;
-      for (var i = 0; i < sigPairs.length; i++) {
-        final startCol = i * sigWidth;
-        final endCol = (i == sigPairs.length - 1)
-            ? lastColIndex
-            : startCol + sigWidth - 1;
-        sheet.merge(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: labelRow),
-          CellIndex.indexByColumnRow(columnIndex: endCol, rowIndex: labelRow),
+      for (var i = 0; i < sigRanges.length; i++) {
+        _writeMergedCell(
+          sheet,
+          row: labelRow,
+          startCol: sigRanges[i][0],
+          endCol: sigRanges[i][1],
+          value: sigPairs[i],
+          style: signatureLabelStyle,
         );
-        var sc = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: startCol, rowIndex: labelRow),
-        );
-        sc.value = TextCellValue(sigPairs[i]);
-        sc.cellStyle = signatureLabelStyle;
       }
       sheet.setRowHeight(labelRow, 24);
 
       // ======================== Column widths ========================
-      sheet.setColumnWidth(0, 6);  // #
+      sheet.setColumnWidth(0, 6); // #
       sheet.setColumnWidth(1, 28); // Name
       sheet.setColumnWidth(2, 14); // Number
       for (var i = 0; i < fields.length; i++) {
@@ -770,7 +818,7 @@ class AnalyticsService {
       final encoded = excel.encode();
       if (encoded == null) return false;
 
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getTemporaryDirectory();
       final fileName =
           'كشف_درجات_${_safeName(className)}_${_safeName(subject)}_'
           '${DateTime.now().millisecondsSinceEpoch}.xlsx';
@@ -782,6 +830,7 @@ class AnalyticsService {
         subject: 'كشف درجات $className - $subject',
         text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
       );
+      await _deleteFileQuietly(file);
       return true;
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'AnalyticsService.exportToExcel');
@@ -811,8 +860,9 @@ class AnalyticsService {
       final rows = <List<dynamic>>[headers];
       for (var i = 0; i < students.length; i++) {
         final s = students[i];
+        final studentTotal = s.totalFor(fields);
         final pct = totalPossible > 0
-            ? '${((s.total / totalPossible) * 100).toStringAsFixed(1)}%'
+            ? '${((studentTotal / totalPossible) * 100).toStringAsFixed(1)}%'
             : '0%';
         final row = <dynamic>[
           i + 1,
@@ -822,9 +872,9 @@ class AnalyticsService {
             final v = s.grades[f.name];
             return v == null ? '' : _fmt(v);
           }),
-          _fmt(s.total),
+          _fmt(studentTotal),
           pct,
-          _grade(s.total, totalPossible),
+          _grade(studentTotal, totalPossible),
         ];
         rows.add(row);
       }
@@ -838,20 +888,20 @@ class AnalyticsService {
       rows.add(['أعلى درجة', _fmt(stats.highestScore)]);
       rows.add(['أقل درجة', _fmt(stats.lowestScore)]);
 
-      final csv = const ListToCsvConverter().convert(rows);
+      final safeRows = rows
+          .map((row) => row.map(_csvSafeCell).toList(growable: false))
+          .toList(growable: false);
+      final csv = const ListToCsvConverter().convert(safeRows);
       final content = '\uFEFF$csv';
 
       // Web: لا يوجد file system — نشارك النص مباشرةً عبر share_plus
       if (kIsWeb) {
-        await Share.share(
-          content,
-          subject: 'درجات $className - $subject',
-        );
+        await Share.share(content, subject: 'درجات $className - $subject');
         return true;
       }
 
       // Mobile/Desktop: حفظ ملف CSV ثم مشاركته
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getTemporaryDirectory();
       final fileName =
           'Grades_${_safeName(className)}_${_safeName(subject)}_'
           '${DateTime.now().millisecondsSinceEpoch}.csv';
@@ -863,6 +913,7 @@ class AnalyticsService {
         subject: 'درجات $className - $subject',
         text: 'تم تصدير الدرجات من تطبيق StudyGrades 2026',
       );
+      await _deleteFileQuietly(file);
       return true;
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'AnalyticsService.exportToCSV');
@@ -873,6 +924,30 @@ class AnalyticsService {
   static String _fmt(double v) {
     if (v == v.roundToDouble()) return v.toStringAsFixed(0);
     return v.toStringAsFixed(2);
+  }
+
+  static dynamic _csvSafeCell(dynamic value) {
+    if (value is! String || value.isEmpty) return value;
+    final withoutLeadingControls = value.replaceFirst(
+      RegExp(r'^[\x00-\x1F\x7F\s]+'),
+      '',
+    );
+    if (withoutLeadingControls.isEmpty) return value;
+    const dangerous = ['=', '+', '-', '@'];
+    if (dangerous.contains(withoutLeadingControls[0])) {
+      return "'$value";
+    }
+    return value;
+  }
+
+  static Future<void> _deleteFileQuietly(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Share targets may still hold the file briefly; cleanup is best-effort.
+    }
   }
 
   static String _safeName(String input) {

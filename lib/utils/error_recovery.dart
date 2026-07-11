@@ -37,7 +37,9 @@ class ErrorRecoveryManager {
       debugPrint('[ERROR_RECOVERY] Error recorded: $message');
       debugPrint('[ERROR_RECOVERY] Context: $context');
       if (stackTrace != null) {
-        debugPrint('[ERROR_RECOVERY] Stack: ${stackTrace.toString().split('\n').take(3).join('\n')}');
+        debugPrint(
+          '[ERROR_RECOVERY] Stack: ${stackTrace.toString().split('\n').take(3).join('\n')}',
+        );
       }
     }
   }
@@ -66,7 +68,9 @@ class ErrorRecoveryManager {
           },
         );
         if (kDebugMode) {
-          debugPrint('[RETRY] ✓ Success on attempt $attempt for $operationName');
+          debugPrint(
+            '[RETRY] ✓ Success on attempt $attempt for $operationName',
+          );
         }
         return result;
       } catch (e, s) {
@@ -92,7 +96,9 @@ class ErrorRecoveryManager {
         }
 
         if (kDebugMode) {
-          debugPrint('[RETRY] Waiting ${delay.inMilliseconds}ms before retry...');
+          debugPrint(
+            '[RETRY] Waiting ${delay.inMilliseconds}ms before retry...',
+          );
         }
         await Future.delayed(delay);
         delay = Duration(
@@ -131,7 +137,9 @@ class ErrorRecoveryManager {
 
       try {
         if (kDebugMode) {
-          debugPrint('[FALLBACK] Attempting fallback operation: $operationName');
+          debugPrint(
+            '[FALLBACK] Attempting fallback operation: $operationName',
+          );
         }
         return await fallbackOperation().timeout(
           const Duration(seconds: 5),

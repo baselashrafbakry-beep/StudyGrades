@@ -19,6 +19,8 @@ class SubjectSelectionScreen extends StatefulWidget {
 }
 
 class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
+  int _termId = 1;
+  int _weekNumber = 1;
   final List<_SubjectOption> _subjects = const [
     _SubjectOption('General', 'عام', Icons.book_outlined, Color(0xFF1976D2)),
     _SubjectOption(
@@ -69,6 +71,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
 
   Future<void> _selectSubject(String subject, String displayName) async {
     final grading = context.read<GradingProvider>();
+    grading.setAcademicPeriod(termId: _termId, weekNumber: _weekNumber);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -193,6 +196,8 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _buildPeriodSelector(),
+                    const SizedBox(height: 20),
                     Text(
                       'المواد الدراسية',
                       style: GoogleFonts.cairo(
@@ -317,6 +322,68 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'الفترة الدراسية',
+            textAlign: TextAlign.right,
+            style: GoogleFonts.cairo(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 1,
+                label: Text('الفصل الأول'),
+                icon: Icon(Icons.looks_one_rounded),
+              ),
+              ButtonSegment(
+                value: 2,
+                label: Text('الفصل الثاني'),
+                icon: Icon(Icons.looks_two_rounded),
+              ),
+            ],
+            selected: {_termId},
+            onSelectionChanged: (selection) {
+              setState(() => _termId = selection.first);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _weekNumber,
+            decoration: const InputDecoration(
+              labelText: 'الأسبوع',
+              prefixIcon: Icon(Icons.calendar_view_week_rounded),
+            ),
+            items: List.generate(
+              18,
+              (index) => DropdownMenuItem(
+                value: index + 1,
+                child: Text('الأسبوع ${index + 1}'),
+              ),
+            ),
+            onChanged: (value) {
+              if (value != null) setState(() => _weekNumber = value);
+            },
+          ),
+        ],
       ),
     );
   }

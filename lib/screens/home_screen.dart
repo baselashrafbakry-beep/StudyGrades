@@ -7,7 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/grading_provider.dart';
 import '../services/api_client.dart';
 import '../theme/app_theme.dart';
-import 'login_screen.dart';
+import '../utils/error_handler.dart';
 import 'subject_selection_screen.dart';
 import 'settings_screen.dart';
 import 'activity_log_screen.dart';
@@ -63,50 +63,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _hierarchy = data;
         _loading = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'HomeScreen.fetchHierarchy');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = ErrorHandler.humanize(e);
         _loading = false;
       });
     }
-  }
-
-  // ignore: unused_element
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'تأكيد',
-          style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'هل تريد تسجيل الخروج من التطبيق؟',
-          style: GoogleFonts.cairo(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('إلغاء', style: GoogleFonts.cairo()),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('خروج', style: GoogleFonts.cairo()),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    if (!mounted) return;
-    await context.read<AuthProvider>().logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
   }
 
   @override
@@ -128,10 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.zero,
-                  children: [
-                    _buildQuickActions(),
-                    _buildBody(),
-                  ],
+                  children: [_buildQuickActions(), _buildBody()],
                 ),
               ),
             ),
@@ -155,9 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
               IconButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 ),
                 tooltip: 'الإعدادات',
                 icon: const Icon(Icons.settings_rounded, color: Colors.white),
@@ -165,9 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
               IconButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ActivityLogScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
                 ),
                 tooltip: 'سجل النشاطات',
                 icon: const Icon(Icons.history_rounded, color: Colors.white),
@@ -224,6 +181,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontSize: 18,
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    auth.user == null
+                        ? 'بدون اشتراك'
+                        : '${auth.user!.subscription.planLabel} • ${auth.user!.subscription.statusLabel}',
+                    style: GoogleFonts.cairo(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -324,7 +292,11 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded, color: AppColors.warning, size: 18),
+          const Icon(
+            Icons.wifi_off_rounded,
+            color: AppColors.warning,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -348,13 +320,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_loading) return _buildShimmer();
 
     if (_error != null) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
+      return Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             const SizedBox(height: 80),
-            Icon(Icons.cloud_off_rounded, size: 80, color: Colors.grey.shade400),
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 80,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(height: 18),
             Text(
               'تعذّر جلب البيانات',
@@ -379,14 +354,15 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.refresh),
               label: Text('إعادة المحاولة', style: GoogleFonts.cairo()),
             ),
+            const SizedBox(height: 18),
+            _buildDemoEntryCard(),
           ],
         ),
       );
     }
 
     if (_hierarchy.isEmpty) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
+      return Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
@@ -403,77 +379,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(
               'تأكد من الاتصال بالإنترنت وإعداد السيرفر',
-              style: GoogleFonts.cairo(
-                fontSize: 12,
-                color: AppColors.textHint,
-              ),
+              style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textHint),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
-            // زر العرض التجريبي
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.info.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.play_circle_outline,
-                          color: AppColors.info, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'تجربة النظام',
-                        style: GoogleFonts.cairo(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.info,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'جرّب الرصد الصوتي بدون اتصال بالسيرفر (بيانات تجريبية)',
-                    style: GoogleFonts.cairo(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      final grading = context.read<GradingProvider>();
-                      grading.loadDemoClassroom(
-                        className: 'فصل تجريبي أ',
-                        subject: 'عام',
-                      );
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SubjectSelectionScreenDemo(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.info,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: Text(
-                      'ابدأ التجربة',
-                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildDemoEntryCard(),
           ],
         ),
       );
@@ -597,9 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.warning,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
                 ),
               ),
@@ -660,6 +568,73 @@ class _HomeScreenState extends State<HomeScreen> {
       SnackBar(
         content: Text(message, style: GoogleFonts.cairo()),
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _buildDemoEntryCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.play_circle_outline,
+                color: AppColors.info,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'تجربة النظام',
+                style: GoogleFonts.cairo(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.info,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'جرّب الرصد الصوتي بدون اتصال بالسيرفر (بيانات تجريبية)',
+            style: GoogleFonts.cairo(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () {
+              final grading = context.read<GradingProvider>();
+              grading.loadDemoClassroom(
+                className: 'فصل تجريبي أ',
+                subject: 'عام',
+              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SubjectSelectionScreenDemo(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.info,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: Text(
+              'ابدأ التجربة',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -795,19 +770,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildShimmer() {
-    return ListView.builder(
+    return Padding(
       padding: const EdgeInsets.all(16),
-      itemCount: 6,
-      itemBuilder: (_, __) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Shimmer.fromColors(
-          baseColor: Colors.grey.shade300,
-          highlightColor: Colors.grey.shade100,
-          child: Container(
-            height: 80,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+      child: Column(
+        children: List.generate(
+          6,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Shimmer.fromColors(
+              baseColor: Colors.grey.shade300,
+              highlightColor: Colors.grey.shade100,
+              child: Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
         ),

@@ -68,9 +68,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: AppColors.cardBackground,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -130,10 +128,9 @@ class AppTheme {
         surface: darkSurface,
       ),
       scaffoldBackgroundColor: darkBg,
-      textTheme: GoogleFonts.cairoTextTheme(base.textTheme).apply(
-        bodyColor: Colors.white,
-        displayColor: Colors.white,
-      ),
+      textTheme: GoogleFonts.cairoTextTheme(
+        base.textTheme,
+      ).apply(bodyColor: Colors.white, displayColor: Colors.white),
       appBarTheme: AppBarTheme(
         backgroundColor: darkSurface,
         foregroundColor: Colors.white,
@@ -147,9 +144,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: darkCard,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

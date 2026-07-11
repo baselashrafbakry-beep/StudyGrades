@@ -1,12 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/error_handler.dart';
 
-/// شاشة إحصاءات النظام التفصيلية - للمطور والمدير
+/// شاشة إحصاءات النظام التفصيلية - للمطور فقط
 class SystemStatsScreen extends StatefulWidget {
   const SystemStatsScreen({super.key});
 
@@ -18,15 +20,37 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
   Map<String, dynamic> _stats = {};
   List<User> _users = [];
   bool _loading = true;
+  bool _initialized = false;
+  bool _accessDenied = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    final user = context.read<AuthProvider>().user;
+    if (user?.canViewSystemStats != true) {
+      _accessDenied = true;
+      _loading = false;
+      return;
+    }
     _load();
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    final user = context.read<AuthProvider>().user;
+    if (user?.canViewSystemStats != true) {
+      if (mounted) {
+        setState(() {
+          _accessDenied = true;
+          _loading = false;
+        });
+      }
+      return;
+    }
+    if (!_loading) {
+      setState(() => _loading = true);
+    }
     try {
       final stats = await AdminService.getSystemStats();
       final users = await AdminService.getAllUsers();
@@ -45,6 +69,9 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_accessDenied) {
+      return _buildNoAccess();
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -71,6 +98,51 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoAccess() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 56,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'لا تملك صلاحية عرض إحصاءات النظام',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'هذه الصفحة متاحة لحساب المطور فقط.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -238,17 +310,19 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     void add(int v, Color c, String label) {
       if (v == 0) return;
       final percent = (v / total * 100).toStringAsFixed(0);
-      sections.add(PieChartSectionData(
-        value: v.toDouble(),
-        color: c,
-        title: '$percent%',
-        radius: 60,
-        titleStyle: GoogleFonts.cairo(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+      sections.add(
+        PieChartSectionData(
+          value: v.toDouble(),
+          color: c,
+          title: '$percent%',
+          radius: 60,
+          titleStyle: GoogleFonts.cairo(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
-      ));
+      );
     }
 
     add(dev, const Color(0xFF6A1B9A), 'مطور');
@@ -342,9 +416,12 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     final inactive = (_stats['inactive_users'] ?? 0).toDouble();
     final newWeek = (_stats['new_users_week'] ?? 0).toDouble();
     final total = (_stats['total_users'] ?? 0).toDouble();
-    final maxV = [active, inactive, newWeek, total]
-        .reduce((a, b) => a > b ? a : b)
-        .clamp(1.0, double.infinity);
+    final maxV = [
+      active,
+      inactive,
+      newWeek,
+      total,
+    ].reduce((a, b) => a > b ? a : b).clamp(1.0, double.infinity);
 
     return Container(
       padding: const EdgeInsets.all(16),

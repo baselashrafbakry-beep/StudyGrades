@@ -15,9 +15,18 @@ val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+fun signingProperty(name: String): String? =
+    keystoreProperties.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+
+val releaseStoreFile = signingProperty("storeFile")?.let { file(it) }
+val hasReleaseKeystore =
+    signingProperty("keyAlias") != null &&
+    signingProperty("keyPassword") != null &&
+    releaseStoreFile?.isFile == true &&
+    signingProperty("storePassword") != null
 
 android {
-    namespace = "com.voicegrader.grader"
+    namespace = "com.baselashraf.studygrades"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.voicegrader.grader"
+        applicationId = "com.baselashraf.studygrades"
         // App needs minSdk 23+ for speech_to_text, record, and secure storage
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
@@ -42,16 +51,18 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-            storePassword = keystoreProperties["storePassword"] as String?
+            keyAlias = signingProperty("keyAlias")
+            keyPassword = signingProperty("keyPassword")
+            storeFile = releaseStoreFile
+            storePassword = signingProperty("storePassword")
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // CRITICAL: Disabled minify/shrink to prevent ProGuard/R8 from
             // stripping reflection-based classes used by Flutter plugins.
             // Earlier builds with minify=true caused the app to freeze on
@@ -85,5 +96,18 @@ android {
 
 flutter {
     source = "../.."
+}
+
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any {
+        it.name.contains("Release", ignoreCase = true)
+    }
+    if (releaseRequested && !hasReleaseKeystore) {
+        throw GradleException(
+            "Release signing is required. Configure android/key.properties " +
+                "with keyAlias, keyPassword, storeFile, and storePassword. " +
+                "storeFile must point to an existing keystore file."
+        )
+    }
 }
 

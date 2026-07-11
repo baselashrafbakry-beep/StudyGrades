@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/subscription_model.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
@@ -77,6 +78,13 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     );
   }
 
+  List<String> _assignableRolesFor(User user) {
+    final actorLevel = UserRole.level(user.role);
+    return UserRole.all
+        .where((role) => UserRole.level(role) < actorLevel)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -94,16 +102,16 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _filtered.isEmpty
-                      ? _buildEmpty()
-                      : RefreshIndicator(
-                          onRefresh: _loadUsers,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
-                            itemCount: _filtered.length,
-                            itemBuilder: (ctx, i) =>
-                                _buildUserCard(_filtered[i], currentUser),
-                          ),
-                        ),
+                  ? _buildEmpty()
+                  : RefreshIndicator(
+                      onRefresh: _loadUsers,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
+                        itemCount: _filtered.length,
+                        itemBuilder: (ctx, i) =>
+                            _buildUserCard(_filtered[i], currentUser),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -181,8 +189,10 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
             decoration: InputDecoration(
               hintText: 'بحث عن مستخدم...',
               hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  color: AppColors.primary),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.primary,
+              ),
               filled: true,
               fillColor: AppColors.background,
               contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -198,8 +208,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
             child: Row(
               children: [
                 _filterChip('الكل', 'all', Icons.people_rounded),
-                _filterChip('المطورون', UserRole.developer,
-                    Icons.code_rounded),
+                _filterChip('المطورون', UserRole.developer, Icons.code_rounded),
                 _filterChip('المديرون', UserRole.admin, Icons.shield_rounded),
                 _filterChip('المشرفون', UserRole.manager, Icons.school_rounded),
                 _filterChip('المعلمون', UserRole.teacher, Icons.book_rounded),
@@ -301,18 +310,21 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   }
 
   Widget _divider() => Container(
-        width: 1,
-        height: 28,
-        color: Colors.grey.withValues(alpha: 0.2),
-      );
+    width: 1,
+    height: 28,
+    color: Colors.grey.withValues(alpha: 0.2),
+  );
 
   Widget _buildEmpty() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline_rounded,
-              size: 76, color: Colors.grey.shade300),
+          Icon(
+            Icons.people_outline_rounded,
+            size: 76,
+            color: Colors.grey.shade300,
+          ),
           const SizedBox(height: 16),
           Text(
             'لا يوجد مستخدمون',
@@ -402,7 +414,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.13),
                             borderRadius: BorderRadius.circular(8),
@@ -446,6 +460,11 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                           color: AppColors.textHint,
                         ),
                       ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _subscriptionChip(user),
+                    ),
                   ],
                 ),
               ),
@@ -563,15 +582,75 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     }
   }
 
+  Widget _subscriptionChip(User user) {
+    final subscription = user.subscription;
+    final active = subscription.isUsable;
+    final color = active ? AppColors.success : AppColors.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.workspace_premium_rounded, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            '${subscription.planLabel} • ${subscription.statusLabel}',
+            style: GoogleFonts.cairo(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─────────── Dialogs ───────────
 
   Future<void> _showUserDialog(User? existing) async {
+    final currentUser = context.read<AuthProvider>().user;
+    if (currentUser == null || !currentUser.canManageUsers) {
+      _showError('لا تملك صلاحية إدارة المستخدمين');
+      return;
+    }
+    if (existing != null && !currentUser.canModifyUser(existing)) {
+      _showError('لا تملك صلاحية تعديل هذا المستخدم');
+      return;
+    }
+    final assignableRoles = _assignableRolesFor(currentUser);
+    if (assignableRoles.isEmpty) {
+      _showError('لا توجد أدوار مسموح لك بإسنادها');
+      return;
+    }
     final usernameCtrl = TextEditingController(text: existing?.username ?? '');
     final emailCtrl = TextEditingController(text: existing?.email ?? '');
     final fullNameCtrl = TextEditingController(text: existing?.fullName ?? '');
     final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
     final passwordCtrl = TextEditingController();
+    final expiresCtrl = TextEditingController(
+      text: existing?.subscription.expiresAt == null
+          ? ''
+          : _dateInput(existing!.subscription.expiresAt!),
+    );
     String selectedRole = existing?.role ?? UserRole.teacher;
+    if (!assignableRoles.contains(selectedRole)) {
+      selectedRole = assignableRoles.last;
+    }
+    String selectedPlan =
+        existing?.subscription.plan ?? SubscriptionPlan.professional;
+    if (!SubscriptionPlan.commercial.contains(selectedPlan)) {
+      selectedPlan = SubscriptionPlan.professional;
+    }
+    String selectedStatus =
+        existing?.subscription.status ?? SubscriptionStatus.active;
+    if (!SubscriptionStatus.all.contains(selectedStatus)) {
+      selectedStatus = SubscriptionStatus.active;
+    }
     final formKey = GlobalKey<FormState>();
     final isEdit = existing != null;
 
@@ -580,7 +659,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               Icon(
@@ -612,9 +692,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       ctrl: usernameCtrl,
                       label: 'اسم المستخدم *',
                       icon: Icons.person_outline,
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'مطلوب'
-                          : null,
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'مطلوب' : null,
                     ),
                     const SizedBox(height: 10),
                     _dlgField(
@@ -647,22 +726,97 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                         labelStyle: GoogleFonts.cairo(),
                         prefixIcon: const Icon(Icons.shield_outlined),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      items: UserRole.all
-                          .map((r) => DropdownMenuItem(
-                                value: r,
-                                child: Row(
-                                  children: [
-                                    Text(UserRole.icon(r)),
-                                    const SizedBox(width: 8),
-                                    Text(UserRole.label(r),
-                                        style: GoogleFonts.cairo()),
-                                  ],
-                                ),
-                              ))
+                      items: assignableRoles
+                          .map(
+                            (r) => DropdownMenuItem(
+                              value: r,
+                              child: Row(
+                                children: [
+                                  Text(UserRole.icon(r)),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    UserRole.label(r),
+                                    style: GoogleFonts.cairo(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
                           .toList(),
-                      onChanged: (v) => setSt(() => selectedRole = v ?? selectedRole),
+                      validator: (v) =>
+                          v == null || !assignableRoles.contains(v)
+                          ? 'هذا الدور غير مسموح'
+                          : null,
+                      onChanged: (v) =>
+                          setSt(() => selectedRole = v ?? selectedRole),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedPlan,
+                      decoration: InputDecoration(
+                        labelText: 'خطة الاشتراك',
+                        labelStyle: GoogleFonts.cairo(),
+                        prefixIcon: const Icon(
+                          Icons.workspace_premium_outlined,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      items: SubscriptionPlan.commercial
+                          .map(
+                            (plan) => DropdownMenuItem(
+                              value: plan,
+                              child: Text(
+                                SubscriptionPlan.label(plan),
+                                style: GoogleFonts.cairo(),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) =>
+                          setSt(() => selectedPlan = v ?? selectedPlan),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedStatus,
+                      decoration: InputDecoration(
+                        labelText: 'حالة الاشتراك',
+                        labelStyle: GoogleFonts.cairo(),
+                        prefixIcon: const Icon(Icons.verified_user_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      items: SubscriptionStatus.all
+                          .map(
+                            (status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(
+                                SubscriptionStatus.label(status),
+                                style: GoogleFonts.cairo(),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) =>
+                          setSt(() => selectedStatus = v ?? selectedStatus),
+                    ),
+                    const SizedBox(height: 10),
+                    _dlgField(
+                      ctrl: expiresCtrl,
+                      label: 'تاريخ انتهاء الاشتراك (YYYY-MM-DD)',
+                      icon: Icons.event_outlined,
+                      validator: (v) {
+                        final text = v?.trim() ?? '';
+                        if (text.isEmpty) return null;
+                        return DateTime.tryParse(text) == null
+                            ? 'استخدم الصيغة YYYY-MM-DD'
+                            : null;
+                      },
                     ),
                   ],
                 ),
@@ -677,7 +831,16 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (!formKey.currentState!.validate()) return;
+                if (!assignableRoles.contains(selectedRole)) {
+                  _showError('هذا الدور غير مسموح لك');
+                  return;
+                }
                 try {
+                  final subscription = Subscription(
+                    plan: selectedPlan,
+                    status: selectedStatus,
+                    expiresAt: _parseExpiry(expiresCtrl.text),
+                  );
                   if (isEdit) {
                     final updated = existing.copyWith(
                       username: usernameCtrl.text.trim(),
@@ -685,8 +848,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       fullName: fullNameCtrl.text.trim(),
                       phone: phoneCtrl.text.trim(),
                       role: selectedRole,
+                      subscription: subscription,
                     );
-                    await AdminService.updateUser(updated);
+                    await AdminService.updateUser(updated, actor: currentUser);
                   } else {
                     await AdminService.createUser(
                       username: usernameCtrl.text.trim(),
@@ -695,6 +859,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                       role: selectedRole,
                       fullName: fullNameCtrl.text.trim(),
                       phone: phoneCtrl.text.trim(),
+                      subscription: subscription,
+                      actor: currentUser,
                     );
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -736,12 +902,31 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     );
   }
 
+  String _dateInput(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  DateTime? _parseExpiry(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    return DateTime.tryParse(text);
+  }
+
   Future<void> _toggleActive(User user) async {
-    await AdminService.toggleUserActive(user.id);
-    _showSuccess(
-      user.isActive ? 'تم إيقاف الحساب' : 'تم تفعيل الحساب',
-    );
-    _loadUsers();
+    final currentUser = context.read<AuthProvider>().user;
+    if (currentUser == null || !currentUser.canModifyUser(user)) {
+      _showError('لا تملك صلاحية تعديل هذا المستخدم');
+      return;
+    }
+    try {
+      await AdminService.toggleUserActive(user.id, actor: currentUser);
+      _showSuccess(user.isActive ? 'تم إيقاف الحساب' : 'تم تفعيل الحساب');
+      _loadUsers();
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    }
   }
 
   Future<void> _resetPasswordDialog(User user) async {
@@ -749,8 +934,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'تعيين كلمة مرور جديدة',
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
@@ -772,7 +956,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                 labelStyle: GoogleFonts.cairo(),
                 prefixIcon: const Icon(Icons.lock_outline),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -788,12 +973,27 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                 _showError('كلمة المرور 4 أحرف على الأقل');
                 return;
               }
-              await AdminService.resetPassword(user.id, ctrl.text);
-              if (ctx.mounted) Navigator.pop(ctx);
-              _showSuccess('تم تغيير كلمة المرور');
+              final currentUser = context.read<AuthProvider>().user;
+              if (currentUser == null || !currentUser.canModifyUser(user)) {
+                _showError('لا تملك صلاحية تعديل هذا المستخدم');
+                return;
+              }
+              try {
+                await AdminService.resetPassword(
+                  user.id,
+                  ctrl.text,
+                  actor: currentUser,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showSuccess('تم تغيير كلمة المرور');
+              } catch (e) {
+                _showError(e.toString().replaceAll('Exception: ', ''));
+              }
             },
-            child: Text('تأكيد',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text(
+              'تأكيد',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -816,15 +1016,21 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStateDialog) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
-              const Icon(Icons.warning_amber_rounded,
-                  color: AppColors.error, size: 28),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.error,
+                size: 28,
+              ),
               const SizedBox(width: 8),
-              Text('تأكيد الحذف النهائي',
-                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+              Text(
+                'تأكيد الحذف النهائي',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           content: Column(
@@ -840,7 +1046,9 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
               Text(
                 'اكتب كلمة "حذف" للتأكيد:',
                 style: GoogleFonts.cairo(
-                    fontSize: 12, fontWeight: FontWeight.w600),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -852,7 +1060,8 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                   isDense: true,
                   hintText: 'حذف',
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 style: GoogleFonts.cairo(),
               ),
@@ -869,8 +1078,10 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                 backgroundColor: AppColors.error,
                 disabledBackgroundColor: Colors.grey.shade300,
               ),
-              child: Text('حذف نهائياً',
-                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+              child: Text(
+                'حذف نهائياً',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -880,6 +1091,11 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     confirmCtrl.dispose();
     if (result != true) return;
     if (!mounted) return;
+    final currentUser = context.read<AuthProvider>().user;
+    if (currentUser == null || !currentUser.canModifyUser(user)) {
+      _showError('لا تملك صلاحية حذف هذا المستخدم');
+      return;
+    }
 
     // Show progress so user can't double-trigger
     showDialog(
@@ -889,7 +1105,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     );
 
     try {
-      await AdminService.deleteUser(user.id);
+      await AdminService.deleteUser(user.id, actor: currentUser);
       if (!mounted) return;
       Navigator.pop(context); // close progress
       _showSuccess('تم حذف الحساب');

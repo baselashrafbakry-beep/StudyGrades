@@ -6,6 +6,8 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../utils/error_handler.dart';
 
+enum MicrophonePermissionResult { granted, denied, permanentlyDenied }
+
 /// Voice recording + on-device speech-to-text service.
 /// Strategy:
 ///  1. On-device speech_to_text (Arabic, free, instant) - PRIMARY
@@ -24,6 +26,7 @@ class VoiceService {
 
   // Safety timeout timer — stored so it can be cancelled if needed
   Timer? _safetyTimer;
+  Completer<String>? _activeListenCompleter;
 
   // Streaming partials for continuous mode
   StreamController<String>? _partialController;
@@ -36,9 +39,20 @@ class VoiceService {
   bool get isInitialized => _initialized;
 
   Future<bool> requestPermissions() async {
-    final mic = await Permission.microphone.request();
-    return mic.isGranted;
+    return await requestMicrophoneAccess() ==
+        MicrophonePermissionResult.granted;
   }
+
+  Future<MicrophonePermissionResult> requestMicrophoneAccess() async {
+    final mic = await Permission.microphone.request();
+    if (mic.isGranted) return MicrophonePermissionResult.granted;
+    if (mic.isPermanentlyDenied || mic.isRestricted) {
+      return MicrophonePermissionResult.permanentlyDenied;
+    }
+    return MicrophonePermissionResult.denied;
+  }
+
+  Future<bool> openPermissionSettings() => openAppSettings();
 
   /// Initialize the speech recognizer once. Subsequent calls are no-ops.
   /// يُجرّب ar_EG أولاً ثم ar_SA ثم ar كـ fallback.
@@ -101,7 +115,15 @@ class VoiceService {
       if (!ok) throw 'التعرف الصوتي غير متاح على هذا الجهاز';
     }
 
-    // Make sure no previous session is still alive
+    // Complete an orphaned session before replacing its safety timer. Some
+    // platform implementations emit notListening without a final result.
+    final previousCompleter = _activeListenCompleter;
+    if (previousCompleter != null && !previousCompleter.isCompleted) {
+      previousCompleter.complete('');
+    }
+    _activeListenCompleter = null;
+
+    // Make sure no previous platform session is still alive.
     if (_isListening) {
       try {
         await _speech.stop();
@@ -121,6 +143,7 @@ class VoiceService {
     final effectiveLocale = localeId ?? await _bestArabicLocale();
 
     final completer = Completer<String>();
+    _activeListenCompleter = completer;
     String finalText = '';
 
     void completeOnce(String txt) {
@@ -128,6 +151,9 @@ class VoiceService {
         _isListening = false;
         _safetyTimer?.cancel();
         _safetyTimer = null;
+        if (_activeListenCompleter == completer) {
+          _activeListenCompleter = null;
+        }
         completer.complete(txt);
       }
     }
@@ -135,9 +161,6 @@ class VoiceService {
     _isListening = true;
     try {
       await _speech.listen(
-        localeId: effectiveLocale,
-        listenFor: listenFor,
-        pauseFor: pauseFor,
         onResult: (result) {
           finalText = result.recognizedWords;
           if (onPartial != null) onPartial(finalText);
@@ -149,12 +172,18 @@ class VoiceService {
           partialResults: true,
           cancelOnError: true,
           listenMode: stt.ListenMode.dictation,
+          localeId: effectiveLocale,
+          listenFor: listenFor,
+          pauseFor: pauseFor,
         ),
       );
     } catch (e) {
       _isListening = false;
       _safetyTimer?.cancel();
       _safetyTimer = null;
+      if (_activeListenCompleter == completer) {
+        _activeListenCompleter = null;
+      }
       if (!completer.isCompleted) completer.completeError(e.toString());
       return completer.future;
     }
@@ -175,6 +204,8 @@ class VoiceService {
   }
 
   Future<void> stopListening() async {
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     if (_isListening) {
       try {
         await _speech.stop();
@@ -183,6 +214,11 @@ class VoiceService {
       }
       _isListening = false;
     }
+    final active = _activeListenCompleter;
+    if (active != null && !active.isCompleted) {
+      active.complete('');
+    }
+    _activeListenCompleter = null;
   }
 
   Future<void> cancelListening() async {
@@ -198,6 +234,11 @@ class VoiceService {
       }
       _isListening = false;
     }
+    final active = _activeListenCompleter;
+    if (active != null && !active.isCompleted) {
+      active.complete('');
+    }
+    _activeListenCompleter = null;
     // also clean up any continuous streams
     await _partialController?.close();
     _partialController = null;
@@ -205,10 +246,13 @@ class VoiceService {
 
   // ============ File Recording (for server-side Whisper) ============
   Future<String> startRecording() async {
+    if (_isRecording) {
+      throw StateError('An audio recording is already active.');
+    }
     if (!await _recorder.hasPermission()) {
       throw 'صلاحية الميكروفون مرفوضة';
     }
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getTemporaryDirectory();
     final path = p.join(
       dir.path,
       'rec_${DateTime.now().millisecondsSinceEpoch}.m4a',

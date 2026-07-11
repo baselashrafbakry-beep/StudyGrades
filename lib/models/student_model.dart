@@ -6,17 +6,42 @@ class GradeField {
   GradeField({required this.name, required this.label, required this.max});
 
   factory GradeField.fromJson(Map<String, dynamic> json) {
+    final parsedMax = _toDouble(json['max']);
     return GradeField(
       name: json['name']?.toString() ?? '',
       label: json['label']?.toString() ?? json['name']?.toString() ?? '',
-      max: _toDouble(json['max']),
+      max: parsedMax != null && parsedMax.isFinite && parsedMax > 0
+          ? parsedMax
+          : 100,
     );
   }
 
-  static double _toDouble(dynamic v) {
+  static GradeField? tryFromJson(Map<String, dynamic> json) {
+    final name = json['name']?.toString().trim() ?? '';
+    final parsedMax = _toDouble(json['max']);
+    if (name.isEmpty ||
+        parsedMax == null ||
+        !parsedMax.isFinite ||
+        parsedMax <= 0) {
+      return null;
+    }
+    return GradeField(
+      name: name,
+      label: json['label']?.toString() ?? name,
+      max: parsedMax,
+    );
+  }
+
+  static double? _toDouble(dynamic v) {
     if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v) ?? 0;
-    return 0;
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  static double clampGrade(double value, GradeField field) {
+    if (!value.isFinite) return 0;
+    final max = field.max.isFinite && field.max > 0 ? field.max : 100;
+    return value.clamp(0, max).toDouble();
   }
 
   Map<String, dynamic> toJson() => {'name': name, 'label': label, 'max': max};
@@ -45,16 +70,22 @@ class Student {
     final raw = json['existing_grades'];
     if (raw is Map) {
       raw.forEach((k, v) {
-        existing[k.toString()] = GradeField._toDouble(v);
+        final parsed = GradeField._toDouble(v);
+        if (parsed != null && parsed.isFinite) {
+          existing[k.toString()] = parsed;
+        }
       });
     }
     return Student(
       id: _toInt(json['id']),
       studentNumber:
-          json['student_number']?.toString() ?? json['number']?.toString() ?? '',
+          json['student_number']?.toString() ??
+          json['number']?.toString() ??
+          '',
       name: json['name']?.toString() ?? json['full_name']?.toString() ?? '',
       existingGrades: existing,
       grades: Map<String, double>.from(existing),
+      isLocked: _toBool(json['is_locked'] ?? json['locked']),
     );
   }
 
@@ -64,8 +95,34 @@ class Student {
     return 0;
   }
 
+  static bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value?.toString().trim().toLowerCase();
+    return normalized == 'true' || normalized == '1' || normalized == 'yes';
+  }
+
   double get total =>
       grades.values.fold<double>(0, (sum, v) => sum + (v.isFinite ? v : 0));
+
+  double totalFor(List<GradeField> fields) {
+    return fields.fold<double>(0, (sum, field) {
+      final value = grades[field.name];
+      if (value == null || !value.isFinite) return sum;
+      return sum + GradeField.clampGrade(value, field);
+    });
+  }
+
+  int completedFieldCount(List<GradeField> fields) {
+    return fields.where((field) {
+      final value = grades[field.name];
+      return value != null && value.isFinite;
+    }).length;
+  }
+
+  bool isCompleteFor(List<GradeField> fields) {
+    return fields.isNotEmpty && completedFieldCount(fields) == fields.length;
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -124,7 +181,8 @@ class ClassroomData {
       subject: subject ?? json['subject']?.toString() ?? 'عام',
       fields: fieldsList
           .whereType<Map>()
-          .map((e) => GradeField.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => GradeField.tryFromJson(Map<String, dynamic>.from(e)))
+          .whereType<GradeField>()
           .toList(),
       students: studentsList
           .whereType<Map>()

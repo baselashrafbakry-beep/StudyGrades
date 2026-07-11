@@ -27,6 +27,13 @@ class NLPResult {
       numbers.isEmpty && commands.isEmpty && originalText.trim().isEmpty;
 }
 
+class _ArabicNumberMatch {
+  final double value;
+  final int consumed;
+
+  const _ArabicNumberMatch(this.value, this.consumed);
+}
+
 class NLPParser {
   // ثغرة مُصلَحة: "صفر" معزولة = رقم 0، وليس أمر "clear"
   static const Map<String, List<String>> _commandKeywords = {
@@ -72,13 +79,7 @@ class NLPParser {
       'reset',
       'إعادة',
     ],
-    'save': [
-      'حفظ',
-      'احفظ',
-      'سجل',
-      'save',
-      'حفظ الآن',
-    ],
+    'save': ['حفظ', 'احفظ', 'سجل', 'save', 'حفظ الآن'],
     'absent': [
       'غائب',
       'غايب',
@@ -288,10 +289,26 @@ class NLPParser {
 
   /// خريطة الأرقام العربية الهندية إلى اللاتينية
   static const Map<String, String> _arabicDigitsMap = {
-    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
-    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+    '٠': '0',
+    '١': '1',
+    '٢': '2',
+    '٣': '3',
+    '٤': '4',
+    '٥': '5',
+    '٦': '6',
+    '٧': '7',
+    '٨': '8',
+    '٩': '9',
+    '۰': '0',
+    '۱': '1',
+    '۲': '2',
+    '۳': '3',
+    '۴': '4',
+    '۵': '5',
+    '۶': '6',
+    '۷': '7',
+    '۸': '8',
+    '۹': '9',
   };
 
   static String _normalize(String text) {
@@ -306,6 +323,11 @@ class NLPParser {
     t = t.replaceAll('ة', 'ه');
     t = t.replaceAll('ؤ', 'و');
     t = t.replaceAll('ئ', 'ي');
+    // Preserve decimal comma between digits before replacing punctuation.
+    t = t.replaceAllMapped(
+      RegExp(r'(\d)[,\u060C](\d)'),
+      (m) => '${m.group(1)}.${m.group(2)}',
+    );
     // إزالة علامات الترقيم (مع الحفاظ على النقطة في الأرقام مثل 8.5)
     t = t.replaceAll(RegExp(r'[,،؛؟!:؟"\(\)\[\]{}\-_/\\]'), ' ');
     // تقليص المسافات
@@ -326,15 +348,9 @@ class NLPParser {
     final numbers = <double>[];
     final commands = <String>{};
 
-    // 1) استخراج الأرقام اللاتينية والهندية (مثل "15"، "20.5")
-    final digitMatches = RegExp(r'\d+(?:[.,]\d+)?').allMatches(normalized);
-    for (final m in digitMatches) {
-      final v = double.tryParse(m.group(0)!.replaceAll(',', '.'));
-      if (v != null && v.isFinite) numbers.add(v);
-    }
-
-    // 2) استخراج الكلمات العربية للأرقام المركبة مثل "خمسة وعشرين"
-    _extractArabicNumbers(normalized, numbers);
+    // Extract digit and word forms in their spoken order. Field assignment is
+    // positional, so collecting all digits before Arabic words can swap grades.
+    _extractNumbersInOrder(normalized, numbers);
 
     // 3) استخراج الأوامر
     _extractCommands(normalized, commands);
@@ -351,97 +367,125 @@ class NLPParser {
       commands.remove('zero');
     }
 
-    return NLPResult(
-      numbers: numbers,
-      commands: commands,
-      originalText: text,
-    );
+    return NLPResult(numbers: numbers, commands: commands, originalText: text);
   }
 
-  static void _extractArabicNumbers(String normalized, List<double> numbers) {
-    // تجربة العبارات المركبة المسجّلة أولاً (مثل "خمسة وعشرين")
-    for (final entry in _arabicNumbers.entries) {
-      if (!entry.key.contains(' ')) continue; // عبارات متعددة الكلمات فقط
-      final nk = _normalize(entry.key);
-      if (nk.isEmpty) continue;
-      if (normalized.contains(nk)) {
-        final n = entry.value;
-        if (n != 0.5 && n != 0.25 && n != 0.333 && n != 0.75) {
-          if (!numbers.contains(n)) {
-            numbers.add(n);
-          }
+  static void _extractNumbersInOrder(String normalized, List<double> numbers) {
+    final words = normalized
+        .split(' ')
+        .where((word) => word.trim().isNotEmpty)
+        .toList(growable: false);
+
+    var i = 0;
+    while (i < words.length) {
+      final digit = double.tryParse(words[i].replaceAll(',', '.'));
+      if (digit != null && digit.isFinite) {
+        var value = digit;
+        var consumed = 1;
+        final fraction = _matchArabicNumberAt(words, i + consumed);
+        if (fraction != null && _isFraction(fraction.value)) {
+          value = double.parse((value + fraction.value).toStringAsFixed(3));
+          consumed += fraction.consumed;
         }
+        numbers.add(value);
+        i += consumed;
+        continue;
+      }
+
+      final match = _matchArabicNumberAt(words, i);
+      if (match == null) {
+        i++;
+        continue;
+      }
+
+      if (_isFraction(match.value)) {
+        if (numbers.isNotEmpty) {
+          numbers[numbers.length - 1] = double.parse(
+            (numbers.last + match.value).toStringAsFixed(3),
+          );
+        } else {
+          numbers.add(match.value);
+        }
+        i += match.consumed;
+        continue;
+      }
+
+      var value = match.value;
+      var consumed = match.consumed;
+      final fraction = _matchArabicNumberAt(words, i + consumed);
+      if (fraction != null && _isFraction(fraction.value)) {
+        value = double.parse((value + fraction.value).toStringAsFixed(3));
+        consumed += fraction.consumed;
+      }
+
+      numbers.add(value);
+      i += consumed;
+    }
+  }
+
+  static _ArabicNumberMatch? _matchArabicNumberAt(
+    List<String> words,
+    int index,
+  ) {
+    if (index >= words.length) return null;
+
+    final current = _stripLeadingAnd(words[index]);
+    final currentValue = _arabicNumbers[current];
+    final next = index + 1 < words.length
+        ? _stripLeadingAnd(words[index + 1])
+        : null;
+    final nextValue = next == null ? null : _arabicNumbers[next];
+
+    if (currentValue != null && nextValue != null) {
+      if (_isUnit(currentValue) && (_isTens(nextValue) || nextValue == 10)) {
+        return _ArabicNumberMatch(currentValue + nextValue, 2);
+      }
+      if (_isTens(currentValue) && _isUnit(nextValue)) {
+        return _ArabicNumberMatch(currentValue + nextValue, 2);
       }
     }
 
-    // ثم كلمات مفردة مع دعم التركيبات بكلا الترتيبين:
-    //   وحدات + عشرات: "خمسة وعشرين" = 25
-    //   عشرات + وحدات: "عشرين وخمسة" = 25
-    final words = normalized.split(' ');
-    for (var i = 0; i < words.length; i++) {
-      final w = words[i];
-      if (w.isEmpty) continue;
+    final entries = _arabicNumbers.entries.toList()
+      ..sort((a, b) {
+        final aTokens = _normalize(a.key).split(' ').length;
+        final bTokens = _normalize(b.key).split(' ').length;
+        final byTokens = bTokens.compareTo(aTokens);
+        if (byTokens != 0) return byTokens;
+        return b.key.length.compareTo(a.key.length);
+      });
 
-      String? matched;
-      if (_arabicNumbers.containsKey(w)) {
-        matched = w;
-      } else if (w.startsWith('و') &&
-          _arabicNumbers.containsKey(w.substring(1))) {
-        matched = w.substring(1);
-      }
-
-      if (matched != null) {
-        final n = _arabicNumbers[matched]!;
-
-        // ── الكسور: تُضاف إلى الرقم السابق ──
-        if ((n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75)) {
-          if (numbers.isNotEmpty) {
-            numbers[numbers.length - 1] =
-                double.parse((numbers.last + n).toStringAsFixed(3));
-          }
-          // إذا لم يكن هناك رقم سابق، تُهمَل (لا يُضاف كسر وحده كرقم)
-          continue;
-        }
-
-        // ── وحدات (1-9) يعقبها عشرات بـ "و": خمسة وعشرين = 25 ──
-        if (n >= 1 && n <= 9 && i + 1 < words.length) {
-          var nextW = words[i + 1];
-          if (nextW.startsWith('و')) nextW = nextW.substring(1);
-          if (_arabicNumbers.containsKey(nextW)) {
-            final nextN = _arabicNumbers[nextW]!;
-            if (nextN >= 20 && nextN % 10 == 0) {
-              final compound = n + nextN;
-              if (!numbers.contains(compound)) numbers.add(compound);
-              i++; // تخطي كلمة العشرات
-              continue;
-            }
-          }
-        }
-
-        // ── عشرات (20,30,…) تعقبها وحدات بـ "و": عشرين وخمسة = 25 ──
-        if (n >= 20 && n % 10 == 0 && i + 1 < words.length) {
-          var nextW = words[i + 1];
-          if (nextW.startsWith('و')) nextW = nextW.substring(1);
-          if (_arabicNumbers.containsKey(nextW)) {
-            final nextN = _arabicNumbers[nextW]!;
-            if (nextN >= 1 && nextN <= 9) {
-              final compound = n + nextN;
-              if (!numbers.contains(compound)) numbers.add(compound);
-              i++; // تخطي كلمة الوحدات
-              continue;
-            }
-          }
-        }
-
-        // ── رقم عادي: تجنب التكرار ──
-        if (n == 0 && numbers.contains(0)) continue;
-        // إصلاح: الشرط المكرر (n > 0 && existing == n) هو نفسه (existing == n)
-        if (!numbers.contains(n)) {
-          numbers.add(n);
+    for (final entry in entries) {
+      final tokens = _normalize(
+        entry.key,
+      ).split(' ').where((token) => token.isNotEmpty).toList(growable: false);
+      if (tokens.isEmpty || index + tokens.length > words.length) continue;
+      var matched = true;
+      for (var offset = 0; offset < tokens.length; offset++) {
+        if (_stripLeadingAnd(words[index + offset]) != tokens[offset]) {
+          matched = false;
+          break;
         }
       }
+      if (matched) return _ArabicNumberMatch(entry.value, tokens.length);
     }
+
+    return null;
   }
+
+  static String _stripLeadingAnd(String word) {
+    if (_arabicNumbers.containsKey(word)) return word;
+    const waw = '\u0648';
+    if (!word.startsWith(waw) || word.length <= 1) return word;
+    final stripped = word.substring(1);
+    return _arabicNumbers.containsKey(stripped) ? stripped : word;
+  }
+
+  static bool _isUnit(double value) => value >= 1 && value <= 9;
+
+  static bool _isTens(double value) => value >= 20 && value % 10 == 0;
+
+  static bool _isFraction(double value) =>
+      value == 0.5 || value == 0.25 || value == 0.333 || value == 0.75;
 
   static void _extractCommands(String normalized, Set<String> commands) {
     _commandKeywords.forEach((cmd, keys) {
@@ -481,8 +525,9 @@ class NLPParser {
     // المرور الأول: ملء الحقول الفارغة
     for (final f in fields) {
       if (idx >= numbers.length) break;
-      if (!updated.containsKey(f.name)) {
-        final v = numbers[idx].clamp(0, f.max).toDouble();
+      final current = updated[f.name];
+      if (current == null || !current.isFinite) {
+        final v = GradeField.clampGrade(numbers[idx], f);
         updated[f.name] = v;
         idx++;
       }
@@ -492,7 +537,7 @@ class NLPParser {
     if (idx < numbers.length) {
       for (final f in fields) {
         if (idx >= numbers.length) break;
-        final v = numbers[idx].clamp(0, f.max).toDouble();
+        final v = GradeField.clampGrade(numbers[idx], f);
         updated[f.name] = v;
         idx++;
       }

@@ -41,7 +41,16 @@ void main() {
         'label': 'L',
         'max': 'invalid',
       });
-      expect(field.max, 0);
+      expect(field.max, 100);
+    });
+
+    test('tryFromJson rejects invalid max values', () {
+      final field = GradeField.tryFromJson({
+        'name': 'q',
+        'label': 'L',
+        'max': -10,
+      });
+      expect(field, isNull);
     });
 
     test('toJson produces correct map', () {
@@ -87,6 +96,21 @@ void main() {
         grades: {'q1': 10, 'q2': double.nan, 'q3': double.infinity, 'q4': 5},
       );
       expect(s.total, 15);
+    });
+
+    test('completion uses current field names only', () {
+      final s = Student(
+        id: 1,
+        studentNumber: '001',
+        name: 'سارة',
+        grades: {'old': 100, 'q1': 10},
+      );
+      final fields = [
+        GradeField(name: 'q1', label: 'Q1', max: 10),
+        GradeField(name: 'q2', label: 'Q2', max: 10),
+      ];
+      expect(s.completedFieldCount(fields), 1);
+      expect(s.isCompleteFor(fields), false);
     });
 
     test('fromJson parses Student correctly', () {

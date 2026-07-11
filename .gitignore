@@ -4,7 +4,6 @@
 build/
 *.g.dart
 *.freezed.dart
-pubspec.lock
 
 # Android
 android/.gradle/
@@ -39,4 +38,23 @@ macos/.symlinks/
 .flutter-plugins-dependencies
 *.bak
 release-key.jks
-key.properties
+node_modules/
+.env
+.env.*
+*.env
+.netlify/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+commercial_backend/node_modules/
+commercial_backend/.env
+commercial_backend/.env.*
+commercial_backend/.netlify/
+
+# Signing material - belt and suspenders: ignore by extension too, not just
+# the one filename above, so a keystore created under any other name (e.g.
+# Flutter's own docs use "upload-keystore.jks") never slips into git history.
+*.jks
+*.p12
+*.keystore

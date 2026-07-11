@@ -36,11 +36,12 @@ class ErrorHandler {
     };
   }
 
-  /// Wrap [runApp] with this to catch any uncaught zone errors.
-  static void runGuarded(void Function() body) {
-    runZonedGuarded<void>(body, (error, stack) {
+  /// Wrap startup and [runApp] with this to catch uncaught zone errors.
+  static Future<void> runGuarded(FutureOr<void> Function() body) async {
+    final result = runZonedGuarded<FutureOr<void>>(body, (error, stack) {
       _record(error, stack, source: 'Zone');
     });
+    await result;
   }
 
   /// Manually log a caught error (for try/catch blocks).
@@ -127,7 +128,11 @@ class ErrorHandler {
     return false;
   }
 
-  static void _record(Object error, StackTrace? stack, {required String source}) {
+  static void _record(
+    Object error,
+    StackTrace? stack, {
+    required String source,
+  }) {
     final entry = LoggedError(
       error: error,
       stack: stack,
@@ -155,12 +160,14 @@ class ErrorHandler {
   /// Recent errors (for in-app diagnostics screen / support export).
   static List<Map<String, dynamic>> recentErrors() {
     return _buffer
-        .map((e) => {
-              'timestamp': e.timestamp.toIso8601String(),
-              'source': e.source,
-              'error': e.error.toString(),
-              'stack': e.stack?.toString().split('\n').take(5).join('\n'),
-            })
+        .map(
+          (e) => {
+            'timestamp': e.timestamp.toIso8601String(),
+            'source': e.source,
+            'error': e.error.toString(),
+            'stack': e.stack?.toString().split('\n').take(5).join('\n'),
+          },
+        )
         .toList();
   }
 
@@ -197,8 +204,7 @@ class FriendlyErrorWidget extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline,
-                    color: Colors.white, size: 64),
+                const Icon(Icons.error_outline, color: Colors.white, size: 64),
                 const SizedBox(height: 16),
                 const Text(
                   'حدث خطأ مؤقت',

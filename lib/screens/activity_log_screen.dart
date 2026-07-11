@@ -44,9 +44,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     final synced = await grading.syncPendingGrades();
     if (!mounted) return;
     Fluttertoast.showToast(
-      msg: synced > 0
-          ? 'تمت مزامنة $synced عنصر بنجاح'
-          : 'فشلت المزامنة',
+      msg: synced > 0 ? 'تمت مزامنة $synced عنصر بنجاح' : 'فشلت المزامنة',
       backgroundColor: synced > 0 ? AppColors.success : AppColors.error,
       textColor: Colors.white,
     );
@@ -67,13 +65,14 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded,
-                color: AppColors.error, size: 26),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.error,
+              size: 26,
+            ),
             const SizedBox(width: 8),
             Text(
               'حذف جميع المعلقات',
@@ -94,8 +93,10 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('حذف الكل',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text(
+              'حذف الكل',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -307,9 +308,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.warning.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),

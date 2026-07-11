@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/app_initialization_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
@@ -50,15 +51,18 @@ class _SplashScreenState extends State<SplashScreen>
     _textSlide = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _textCtrl, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(parent: _textCtrl, curve: Curves.easeOutCubic));
 
     _logoCtrl.forward();
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _textCtrl.forward();
     });
 
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _bootstrap();
+      }
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -76,32 +80,22 @@ class _SplashScreenState extends State<SplashScreen>
       }
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (_, animation, __) => FadeTransition(
-            opacity: animation,
-            child: screen,
-          ),
+          pageBuilder: (_, animation, __) =>
+              FadeTransition(opacity: animation, child: screen),
           transitionDuration: const Duration(milliseconds: 600),
         ),
       );
     }
 
-    // ضمان عدم تجميد شاشة البدء (Safety timer 4 ثواني)
-    Future.delayed(const Duration(milliseconds: 4000), () {
-      if (!navigated && mounted) {
-        if (kDebugMode) {
-          debugPrint('[SPLASH] ⚠️ FALLBACK TRIGGERED - LoginScreen');
-        }
-        navigateTo(const LoginScreen());
-      }
-    });
-
     final auth = context.read<AuthProvider>();
 
     bool isAuth = false;
     try {
-      await auth
-          .restoreSession()
-          .timeout(const Duration(milliseconds: 2500));
+      final initSuccess = await appInitialization.initializeApp();
+      if (kDebugMode) {
+        debugPrint('[SPLASH] init ${initSuccess ? "OK" : "with errors"}');
+      }
+      await auth.restoreSession().timeout(const Duration(milliseconds: 2500));
       isAuth = auth.isAuthenticated;
     } catch (e) {
       if (kDebugMode) debugPrint('[SPLASH] ⚠️ Session restoration failed: $e');
@@ -110,15 +104,17 @@ class _SplashScreenState extends State<SplashScreen>
 
     bool seenIntro = true;
     try {
-      seenIntro = await StorageService.hasSeenIntro()
-          .timeout(const Duration(milliseconds: 800));
+      seenIntro = await StorageService.hasSeenIntro().timeout(
+        const Duration(milliseconds: 800),
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('[SPLASH] ⚠️ Intro check failed: $e');
       seenIntro = true;
     }
 
-    // حد أدنى لظهور شاشة البدء
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // Keep a short minimum splash so navigation does not feel abrupt without
+    // adding avoidable startup latency on slower devices.
+    await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted || navigated) return;
 
     Widget nextScreen;
@@ -150,11 +146,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF0D47A1),
-              Color(0xFF1565C0),
-              Color(0xFF1976D2),
-            ],
+            colors: [Color(0xFF0D47A1), Color(0xFF1565C0), Color(0xFF1976D2)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             stops: [0.0, 0.5, 1.0],
@@ -282,8 +274,7 @@ class _SplashScreenState extends State<SplashScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color:
-                              Colors.white.withValues(alpha: opacity * 0.6),
+                          color: Colors.white.withValues(alpha: opacity * 0.6),
                           width: 2,
                         ),
                       ),
@@ -344,8 +335,7 @@ class _SplashScreenState extends State<SplashScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(3, (i) {
             final t = (_waveCtrl.value + (i * 0.2)) % 1.0;
-            final scale =
-                0.6 + (math.sin(t * math.pi * 2) * 0.5 + 0.5) * 0.5;
+            final scale = 0.6 + (math.sin(t * math.pi * 2) * 0.5 + 0.5) * 0.5;
             return Container(
               width: 12,
               height: 12,
@@ -355,8 +345,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white
-                        .withValues(alpha: 0.3 + scale * 0.5),
+                    color: Colors.white.withValues(alpha: 0.3 + scale * 0.5),
                   ),
                 ),
               ),

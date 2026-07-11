@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
+import '../services/api_client.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
 import 'home_screen.dart';
@@ -22,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _rememberMe = false;
+  bool _validationEnabled = false;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -35,17 +37,11 @@ class _LoginScreenState extends State<LoginScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeIn,
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.15),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOutCubic,
-    ));
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+        );
     _animController.forward();
     _loadRememberedUser();
   }
@@ -55,6 +51,7 @@ class _LoginScreenState extends State<LoginScreen>
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_rememberKey);
       if (saved != null && saved.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           _userCtrl.text = saved;
           _rememberMe = true;
@@ -133,8 +130,12 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
+    if (auth.isLoading) return;
+    if (!_validationEnabled) {
+      setState(() => _validationEnabled = true);
+    }
+    if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     await _saveRememberedUser();
     final ok = await auth.login(_userCtrl.text.trim(), _passCtrl.text);
@@ -145,17 +146,60 @@ class _LoginScreenState extends State<LoginScreen>
         backgroundColor: AppColors.success,
         textColor: Colors.white,
       );
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {
+      final message = _formatLoginError(auth.error);
       Fluttertoast.showToast(
-        msg: auth.error ?? 'فشل تسجيل الدخول',
+        msg: message,
         backgroundColor: AppColors.error,
         textColor: Colors.white,
         toastLength: Toast.LENGTH_LONG,
       );
     }
+  }
+
+  void _clearAuthErrorOnEdit() {
+    final auth = context.read<AuthProvider>();
+    if (auth.error != null) {
+      auth.clearError();
+    }
+  }
+
+  String _formatLoginError(String? rawError) {
+    const fallback =
+        'تعذر تسجيل الدخول. تأكد من اسم المستخدم وكلمة المرور والاتصال بالإنترنت ثم حاول مرة أخرى.';
+    var message = rawError?.trim() ?? '';
+    if (message.isEmpty) return fallback;
+
+    message = message
+        .replaceFirst(RegExp(r'^(Exception|NetworkAuthException):\s*'), '')
+        .replaceFirst(RegExp(r'^DioException\s*\[[^\]]+\]:\s*'), '')
+        .replaceFirst(RegExp(r'^DioException:\s*'), '')
+        .trim();
+
+    final lower = message.toLowerCase();
+    if (lower.contains('authentication deadline') ||
+        lower.contains('timeout') ||
+        lower.contains('timed out')) {
+      return 'استغرقت محاولة تسجيل الدخول وقتاً أطول من المتوقع. تحقق من الإنترنت ثم حاول مرة أخرى.';
+    }
+    if (lower.contains('connection') ||
+        lower.contains('network') ||
+        lower.contains('socket') ||
+        lower.contains('offline') ||
+        message.contains('الاتصال')) {
+      return 'تعذر الاتصال بخدمة تسجيل الدخول. تحقق من الإنترنت ثم حاول مرة أخرى.';
+    }
+    if (lower.contains('unauthorized') ||
+        lower.contains('invalid') ||
+        message.contains('401') ||
+        message.contains('400')) {
+      return 'اسم المستخدم أو كلمة المرور غير صحيحة.';
+    }
+
+    return message;
   }
 
   @override
@@ -167,10 +211,7 @@ class _LoginScreenState extends State<LoginScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFFF5F7FA),
-              Color(0xFFE3F2FD),
-            ],
+            colors: [Color(0xFFF5F7FA), Color(0xFFE3F2FD)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -184,6 +225,9 @@ class _LoginScreenState extends State<LoginScreen>
                 position: _slideAnim,
                 child: Form(
                   key: _formKey,
+                  autovalidateMode: _validationEnabled
+                      ? AutovalidateMode.onUserInteraction
+                      : AutovalidateMode.disabled,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -220,6 +264,10 @@ class _LoginScreenState extends State<LoginScreen>
                       _buildRememberRow(),
                       const SizedBox(height: 24),
                       _buildLoginButton(auth),
+                      if (auth.error != null && !auth.isLoading) ...[
+                        const SizedBox(height: 12),
+                        _buildLoginError(auth.error),
+                      ],
                       const SizedBox(height: 24),
                       _buildServerInfo(),
                       const SizedBox(height: 30),
@@ -249,10 +297,8 @@ class _LoginScreenState extends State<LoginScreen>
         tween: Tween(begin: 0.85, end: 1.0),
         duration: const Duration(milliseconds: 800),
         curve: Curves.elasticOut,
-        builder: (ctx, scale, child) => Transform.scale(
-          scale: scale,
-          child: child,
-        ),
+        builder: (ctx, scale, child) =>
+            Transform.scale(scale: scale, child: child),
         child: Container(
           width: 110,
           height: 110,
@@ -267,11 +313,7 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ],
           ),
-          child: const Icon(
-            Icons.mic_rounded,
-            size: 64,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.mic_rounded, size: 64, color: Colors.white),
         ),
       ),
     );
@@ -285,11 +327,16 @@ class _LoginScreenState extends State<LoginScreen>
       decoration: InputDecoration(
         labelText: 'اسم المستخدم',
         hintText: 'أدخل اسم المستخدم',
-        prefixIcon: const Icon(Icons.person_outline,
-            color: AppColors.primary),
+        prefixIcon: const Icon(Icons.person_outline, color: AppColors.primary),
         labelStyle: GoogleFonts.cairo(),
         hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
       ),
+      onChanged: (_) {
+        _clearAuthErrorOnEdit();
+        if (_validationEnabled) {
+          setState(() {});
+        }
+      },
       validator: (v) =>
           (v == null || v.trim().isEmpty) ? 'الرجاء إدخال اسم المستخدم' : null,
       textInputAction: TextInputAction.next,
@@ -302,7 +349,10 @@ class _LoginScreenState extends State<LoginScreen>
       obscureText: _obscure,
       textDirection: TextDirection.ltr,
       style: GoogleFonts.cairo(),
-      onChanged: (_) => setState(() {}),
+      onChanged: (_) {
+        _clearAuthErrorOnEdit();
+        setState(() {});
+      },
       decoration: InputDecoration(
         labelText: 'كلمة المرور',
         hintText: 'أدخل كلمة المرور',
@@ -318,7 +368,7 @@ class _LoginScreenState extends State<LoginScreen>
         hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
       ),
       validator: (v) =>
-          (v == null || v.isEmpty) ? 'أدخل كلمة المرور' : null,
+          (v == null || v.trim().isEmpty) ? 'أدخل كلمة المرور' : null,
       onFieldSubmitted: (_) => _handleLogin(),
     );
   }
@@ -359,33 +409,31 @@ class _LoginScreenState extends State<LoginScreen>
         InkWell(
           onTap: () => setState(() => _rememberMe = !_rememberMe),
           borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
                     value: _rememberMe,
                     activeColor: AppColors.primary,
-                    onChanged: (v) =>
-                        setState(() => _rememberMe = v ?? false),
+                    onChanged: (v) => setState(() => _rememberMe = v ?? false),
                     visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'تذكرني',
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  Text(
+                    'تذكرني',
+                    style: GoogleFonts.cairo(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -393,8 +441,8 @@ class _LoginScreenState extends State<LoginScreen>
           onPressed: _showHelpDialog,
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            minimumSize: const Size(48, 48),
+            tapTargetSize: MaterialTapTargetSize.padded,
           ),
           child: Text(
             'هل تحتاج مساعدة؟',
@@ -449,27 +497,65 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  Widget _buildLoginError(String? rawError) {
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.error.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.error,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _formatLoginError(rawError),
+                textDirection: TextDirection.rtl,
+                style: GoogleFonts.cairo(
+                  fontSize: 12,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildServerInfo() {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_done_outlined,
-              color: AppColors.primary, size: 20),
+          const Icon(
+            Icons.cloud_done_outlined,
+            color: AppColors.primary,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'متصل بسيرفر آمن',
+                  'سيرفر تسجيل الدخول الآمن',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -477,7 +563,7 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 Text(
-                  'studygrades2026.pythonanywhere.com',
+                  Uri.parse(ApiClient.baseUrl).host,
                   style: GoogleFonts.cairo(
                     fontSize: 11,
                     color: AppColors.textSecondary,
@@ -495,9 +581,7 @@ class _LoginScreenState extends State<LoginScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(Icons.help_outline_rounded, color: AppColors.primary),

@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/grading_provider.dart';
 import 'providers/theme_provider.dart';
-import 'services/app_initialization_service.dart';
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/error_handler.dart';
@@ -15,15 +14,13 @@ import 'utils/error_recovery.dart';
 
 Future<void> main() async {
   // تثبيت معالجات الأخطاء العالمية قبل أي كود آخر
-  ErrorHandler.install();
-
   // استبدال شاشة الخطأ الحمراء بشاشة ودية
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    return FriendlyErrorWidget(details: details);
-  };
-
-  ErrorHandler.runGuarded(() async {
+  await ErrorHandler.runGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    ErrorHandler.install();
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      return FriendlyErrorWidget(details: details);
+    };
 
     if (kDebugMode) {
       debugPrint('[BOOTSTRAP] ========== APP STARTUP ==========');
@@ -63,12 +60,6 @@ Future<void> main() async {
       if (kDebugMode) debugPrint('[BOOTSTRAP] orientation config failed: $e');
     }
 
-    // تهيئة الخدمات
-    final initSuccess = await appInitialization.initializeApp();
-    if (kDebugMode) {
-      debugPrint('[BOOTSTRAP] init ${initSuccess ? "OK" : "with errors"}');
-    }
-
     runApp(const VoiceGraderApp());
   });
 }
@@ -94,7 +85,7 @@ class VoiceGraderApp extends StatelessWidget {
             }
           },
         ),
-        ChangeNotifierProvider(
+        ChangeNotifierProxyProvider<AuthProvider, GradingProvider>(
           create: (_) {
             try {
               return GradingProvider();
@@ -106,6 +97,14 @@ class VoiceGraderApp extends StatelessWidget {
               );
               rethrow;
             }
+          },
+          update: (_, auth, grading) {
+            final provider = grading ?? GradingProvider();
+            provider.setActiveOwner(
+              auth.user?.storageOwnerKey,
+              subscription: auth.user?.subscription,
+            );
+            return provider;
           },
         ),
         ChangeNotifierProvider(
@@ -142,17 +141,9 @@ class VoiceGraderApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           builder: (context, child) {
-            // قيود TextScaler للاحترافية
-            final mq = MediaQuery.of(context);
-            final clampedScale = mq.textScaler.scale(1.0).clamp(0.85, 1.15);
             return Directionality(
               textDirection: TextDirection.rtl,
-              child: MediaQuery(
-                data: mq.copyWith(
-                  textScaler: TextScaler.linear(clampedScale),
-                ),
-                child: child ?? const SizedBox.shrink(),
-              ),
+              child: child ?? const SizedBox.shrink(),
             );
           },
           home: const SplashScreen(),
