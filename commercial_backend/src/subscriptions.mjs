@@ -124,6 +124,10 @@ export function entitlementForUser(user, usage = {}) {
       : {});
   const plan = PLAN_LIMITS[subscription.plan] ? subscription.plan : "trial";
   const limits = { ...planLimits(plan), ...(subscription.limits ?? {}) };
+  // Server transcription is not offered until a production transcription
+  // endpoint and provider are configured. Stored legacy limits must not expose
+  // a paid feature that the API cannot fulfil.
+  limits.server_transcription = false;
   const expiresAt = new Date(subscription.expires_at ?? 0);
   const activeByStatus = ["active", "trialing"].includes(subscription.status);
   const activeByDate =

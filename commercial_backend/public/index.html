@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex,nofollow" />
-    <title>StudyGrades API</title>
+    <meta name="robots" content="index,follow" />
+    <title>StudyGrades</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -37,23 +37,32 @@
       }
 
       p {
-        margin: 0;
+        margin: 0 0 18px;
         line-height: 1.6;
         color: #526071;
       }
 
-      code {
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+      }
+
+      a {
         color: #1167c5;
+        text-underline-offset: 3px;
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>StudyGrades API</h1>
-      <p>
-        Backend service is deployed. Mobile API health is available at
-        <code>/api/mobile/</code>.
-      </p>
+      <h1>StudyGrades</h1>
+      <p>خدمة آمنة لإدارة ورصد درجات الطلاب للمعلمين والمدارس.</p>
+      <nav aria-label="روابط الخدمة">
+        <a href="/privacy.html">سياسة الخصوصية</a>
+        <a href="/terms.html">شروط الاستخدام</a>
+        <a href="/support.html">الدعم والمساعدة</a>
+      </nav>
     </main>
   </body>
 </html>

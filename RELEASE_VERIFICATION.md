@@ -6,16 +6,16 @@ Verification date: 2026-07-11 (Africa/Cairo)
 
 - Production URL: `https://studygrades-2026.netlify.app`
 - API base URL: `https://studygrades-2026.netlify.app/api/mobile`
-- Latest verified deployment ID: `6a51780b34dff4e51692ef25`
+- Latest verified deployment ID: `6a5283b3255a57f8c1e93105`
 - Netlify reported the deployment as live after bundling the production function.
-- Backend test suite: 43 passed, 0 failed.
+- Backend test suite: 45 passed, 0 failed.
 - Backend syntax check: passed.
 - Production dependency audit: 0 known vulnerabilities after the tested
   OpenTelemetry 2.9.0 security override.
 - Flutter static analysis: no issues found.
-- Flutter test suite: 120 passed, 0 failed.
+- Flutter test suite: 122 passed, 0 failed.
 
-GitHub Actions run `29142782342` performed the post-deployment smoke test from
+GitHub Actions run `29143691130` performed the post-deployment smoke test from
 an independent Ubuntu runner. It verified the production health response,
 confirmed that unauthenticated admin access returns 401, confirmed that an
 unsigned Paymob webhook returns 401, and confirmed that the payment return page
@@ -28,8 +28,8 @@ static analysis, all Flutter tests, Web build, and Android debug build.
 
 - File: `build/app/outputs/bundle/release/app-release.aab`
 - Release copy: `D:\StudyGrades_MobileApp\artifacts\StudyGrades-1.0.0+1-release.aab`
-- Size: 69,682,447 bytes
-- SHA-256: `97033879299F7D409359B5E69B1F95F72961ECC09F4522CA95F8342958EB582A`
+- Size: 69,151,902 bytes
+- SHA-256: `3BB045E18CB652B68ECD2AE84FFF329404A57CF8EED28D4812F5C9A3C1EAF363`
 - `bundletool 1.18.1 validate`: passed.
 - Bundle package id: `com.studygrades.app`.
 
@@ -37,8 +37,8 @@ static analysis, all Flutter tests, Web build, and Android debug build.
 
 - File: `build/app/outputs/flutter-apk/app-release.apk`
 - Release copy: `D:\StudyGrades_MobileApp\artifacts\StudyGrades-1.0.0+1-release.apk`
-- Size: 73,015,655 bytes
-- SHA-256: `C6E8AAD122BF2AAB9FF14433C1855D59A52B376EFE4CA43B19FC28397102C4E1`
+- Size: 72,490,687 bytes
+- SHA-256: `6178A46B06AE61E30E1D6A6ED728DA945357A6C4B4E8DC2F9EDF249F4D31B7E0`
 - APK Signature Scheme v2: verified.
 - Number of signers: 1.
 - Signing certificate: `CN=StudyGrades, OU=Mobile, O=StudyGrades, L=Cairo, ST=Cairo, C=EG`.
@@ -88,3 +88,14 @@ the repository at:
 
 No API keys, tokens, passwords, signing-store secrets, or full bank details are
 recorded in this document.
+
+## Store compliance
+
+- Privacy policy: `https://studygrades-2026.netlify.app/privacy.html`
+- Terms: `https://studygrades-2026.netlify.app/terms.html`
+- Support: `https://studygrades-2026.netlify.app/support.html`
+- All public pages are deployed with restrictive security headers and are
+  linked from the application.
+- Server transcription is fail-closed because no production transcription
+  provider is configured. Device speech recognition and manual input remain
+  available.
