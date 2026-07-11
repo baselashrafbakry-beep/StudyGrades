@@ -11,20 +11,42 @@
 # تشغيل جميع الاختبارات
 flutter test
 
-# تشغيل اختبار محدد
-flutter test test/services/storage_service_test.dart
+# تشغيل اختبار محدد (الملفات موجودة مباشرة تحت test/ بدون مجلدات فرعية)
+flutter test test/hive_encryption_service_test.dart
+flutter test test/subscription_service_rsa_integration_test.dart
 
 # تشغيل مع تقرير التغطية
 flutter test --coverage
 ```
 
-#### الملفات المراد اختبارها:
-- [ ] `lib/services/storage_service.dart`
-- [ ] `lib/services/connectivity_service.dart`
-- [ ] `lib/services/admin_service.dart`
-- [ ] `lib/utils/error_recovery.dart`
-- [ ] `lib/providers/auth_provider.dart`
-- [ ] `lib/providers/grading_provider.dart`
+#### ملفات الاختبار الفعلية (27 ملف تحت `test/` مباشرة، بدون مجلدات فرعية):
+- [x] `test/admin_permission_test.dart`
+- [x] `test/admin_seat_limits_test.dart`
+- [x] `test/admin_service_feature_flags_test.dart`
+- [x] `test/analytics_excel_export_100_students_test.dart`
+- [x] `test/analytics_excel_export_low_fields_test.dart`
+- [x] `test/api_client_zombie_session_test.dart`
+- [x] `test/change_own_password_test.dart`
+- [x] `test/device_id_stability_test.dart`
+- [x] `test/grading_provider_cold_start_sync_test.dart`
+- [x] `test/grading_provider_save_write_ahead_test.dart`
+- [x] `test/grading_provider_sync_pending_race_test.dart`
+- [x] `test/hive_encryption_service_test.dart`
+- [x] `test/nlp_fraction_parsing_test.dart`
+- [x] `test/nlp_parser_test.dart`
+- [x] `test/pdf_export_service_test.dart`
+- [x] `test/rsa_verifier_smoke_test.dart`
+- [x] `test/security_license_forgery_poc_test.dart`
+- [x] `test/student_model_test.dart`
+- [x] `test/subscription_clock_manipulation_test.dart`
+- [x] `test/subscription_days_remaining_test.dart`
+- [x] `test/subscription_feature_gating_test.dart`
+- [x] `test/subscription_plan_limits_test.dart`
+- [x] `test/subscription_redemption_registry_test.dart`
+- [x] `test/subscription_service_rsa_integration_test.dart`
+- [x] `test/subscription_sync_with_server_test.dart`
+- [x] `test/voice_error_classification_test.dart`
+- [x] `test/widget_test.dart`
 
 ---
 
@@ -273,5 +295,5 @@ flutter run -d chrome --device-id=chrome
 
 ---
 
-**تم التحديث:** مايو 2026
-**الإصدار:** 1.0.0
+**تم التحديث:** يوليو 2026
+**الإصدار:** 2.0.0

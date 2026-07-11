@@ -3,8 +3,8 @@ import 'dart:io' show Directory, File;
 import 'package:excel/excel.dart' as xl;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/student_model.dart';
-import 'package:voice_grader/services/analytics_service.dart';
+import 'package:study_grades_voice/models/student_model.dart';
+import 'package:study_grades_voice/services/analytics_service.dart';
 
 class _FakePathProviderChannel {
   static const _channel = MethodChannel('plugins.flutter.io/path_provider');

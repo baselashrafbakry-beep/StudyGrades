@@ -7,6 +7,40 @@
 
 ---
 
+## [2.0.0+1] — 2026-07-07
+
+### 🚀 تدقيق شامل قبل الإطلاق التجاري (Commercial Launch Audit)
+
+#### ✨ ميزات جديدة (Added)
+- تكامل تجاري كامل مع Paymob لبوابة الدفع المصرية (اشتراكات، تجديد، استرداد)
+- تحقق ترخيص RSA-2048/PSS لمنع القرصنة والتلاعب بالاشتراكات
+- تشفير Hive AES-256 لبيانات الطلاب والدرجات المحلية
+- تصدير PDF رسمي بجانب Excel (كشوف درجات قابلة للطباعة)
+- اختبار ضغط 100 طالب على تصدير Excel للتحقق من الأداء تحت الحمل
+- تقسيم APK حسب ABI (armeabi-v7a / arm64-v8a / x86_64) لتقليل حجم التحميل حتى ~60%
+
+#### 🛠️ إصلاحات حرجة (Fixed)
+- إصلاح هوية الحزمة (Package Identity): توحيد com.studygrades.app عبر جميع ملفات Android (build.gradle.kts, AndroidManifest.xml, MainActivity.kt) و iOS (project.pbxproj، 6 مواقع)، بعد اكتشاف مشكلة ارتجاع القيم القديمة بسبب ذاكرة تخزين مؤقت لخدمة Gradle/Kotlin Daemon
+- التحقق الثنائي من الهوية: تأكيد com.studygrades.app داخل ملفات APK المُجمَّعة (عبر pyaxmlparser) وملف AAB (عبر فحص بايتات protobuf الخام)، وليس فقط في الكود المصدري
+- إصلاح خادم المعاينة العالق: حل مشكلة توقف المعاينة عند Checking service status بسبب عملية خادم Python قديمة كانت تشير إلى مجلد build/web محذوف بعد flutter clean
+- تحديث proguard-rules.pro لمطابقة اسم الحزمة الجديد
+
+#### 🧹 تنظيف المستودع (Repository Hygiene)
+- إزالة الملفات القديمة غير الضرورية من التتبع: pubspec.yaml.original, pubspec.lock.backup, fallback.log, .pub-cache-policy, .pub-resolve-policy
+- إزالة README_FINAL.md (نسخة مكررة تحتوي على معلومات غير دقيقة: إصدار وترخيص وFlutter version خاطئة)
+- إزالة CRITICAL_ISSUES_ANALYSIS.md (ملاحظات تصحيح أخطاء قديمة تتعارض مع معايير الكود الحالية)
+- تحديث .gitignore لمنع تتبع ملفات log و backup و original مستقبلاً
+- تصحيح المرجع القديم لاسم الحزمة com.voicegrader.grader في ios/BUILD_IOS.md
+- تحديث DEPLOYMENT_INSTRUCTIONS.md و TESTING_QA_GUIDE.md بأرقام إصدار صحيحة وتصحيحات فنية
+- فحص أمني كامل لتاريخ Git للتأكد من عدم تسريب أي مفاتيح أو أسرار — النتيجة: نظيف 100%
+
+#### 🧪 اختبارات الجودة
+- 198 اختبار وحدة جميعها ناجحة (ارتفاع من 35 اختبار في v1.0.0)
+- flutter analyze: 0 أخطاء، 0 تحذيرات
+- dart format: تنسيق موحّد لكل الملفات
+
+---
+
 ## [1.0.0+1] — 2026-05-05
 
 ### 🎉 الإصدار الأول للإنتاج
@@ -67,3 +101,4 @@
 - [Production Site](https://studygrades-2026.netlify.app)
 - [APK Download](https://studygrades-2026.netlify.app/downloads/StudyGrades2026.apk)
 - [AAB Download](https://studygrades-2026.netlify.app/downloads/StudyGrades2026.aab)
+- [PWA](https://studygrades-2026.netlify.app/app/)

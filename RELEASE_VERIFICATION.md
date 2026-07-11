@@ -13,7 +13,7 @@ Verification date: 2026-07-11 (Africa/Cairo)
 - Production dependency audit: 0 known vulnerabilities after the tested
   OpenTelemetry 2.9.0 security override.
 - Flutter static analysis: no issues found.
-- Flutter test suite: 82 passed, 0 failed.
+- Flutter test suite: 120 passed, 0 failed.
 
 The current workstation network cannot establish TCP port 443 connections to
 the resolved Netlify CDN addresses. Live HTTP requests therefore time out before
@@ -28,29 +28,32 @@ network path is available.
 ### Google Play bundle
 
 - File: `build/app/outputs/bundle/release/app-release.aab`
-- Size: 69,464,543 bytes
-- SHA-256: `406BF2091DB1CA80AC630DE0B0BE82FC98F7B2EB2094F13D61A5296C261040FE`
+- Release copy: `D:\StudyGrades_MobileApp\artifacts\StudyGrades-1.0.0+1-release.aab`
+- Size: 69,682,447 bytes
+- SHA-256: `97033879299F7D409359B5E69B1F95F72961ECC09F4522CA95F8342958EB582A`
 - `bundletool 1.18.1 validate`: passed.
+- Bundle package id: `com.studygrades.app`.
 
 ### Direct-distribution APK
 
 - File: `build/app/outputs/flutter-apk/app-release.apk`
-- Size: 72,798,906 bytes
-- SHA-256: `0BD3C5AF507FE38E0D30BCEA3E5C2A7305211552F10C03711284EA9CF824BA70`
+- Release copy: `D:\StudyGrades_MobileApp\artifacts\StudyGrades-1.0.0+1-release.apk`
+- Size: 73,015,655 bytes
+- SHA-256: `C6E8AAD122BF2AAB9FF14433C1855D59A52B376EFE4CA43B19FC28397102C4E1`
 - APK Signature Scheme v2: verified.
 - Number of signers: 1.
 - Signing certificate: `CN=StudyGrades, OU=Mobile, O=StudyGrades, L=Cairo, ST=Cairo, C=EG`.
 - Certificate SHA-256: `67B32E9EBEB392F0771D70C33883EC567B58F7A27B429251ACCF4D8D23BDA8E1`.
 
-The new APK was installed on the existing Android 36 ATD emulator and launched
-as `com.baselashraf.studygrades/.MainActivity`. The onboarding flow reached the
-production login screen, the process retained the same PID after background and
-foreground transitions, and the filtered Android error log contained zero
+The new APK was installed on the Android 35 emulator and launched as
+`com.studygrades.app/.MainActivity`. The onboarding flow reached the production
+login screen, the activity remained top-resumed, and the filtered Android error
+log contained zero
 `FATAL EXCEPTION`/application crash matches. Visual evidence is stored outside
 the repository at:
 
-- `D:\StudyGrades_MobileApp\artifacts\studygrades_latest.png`
-- `D:\StudyGrades_MobileApp\artifacts\studygrades_after_onboarding.png`
+- `D:\StudyGrades_MobileApp\artifacts\studygrades_clean.png`
+- `D:\StudyGrades_MobileApp\artifacts\studygrades_login_clean.png`
 
 ## Build environment
 
@@ -59,9 +62,14 @@ the repository at:
 - Java: Temurin JDK 17.0.18.
 - Android SDK: `D:\Android\Sdk` (Android 36, build-tools 36.0.0).
 - Gradle cache: `D:\.gradle`; retained for faster future builds.
-- Android build completed with the currently verified Gradle 8.12, AGP 8.9.1,
-  and Kotlin 2.1.0 toolchain. Flutter reports future-deprecation warnings for
-  these versions, but they are not current build failures.
+- Gradle: 8.14.4.
+- Android Gradle Plugin: 8.11.1.
+- Kotlin Gradle Plugin: 2.2.20.
+- Pub cache: `D:\StudyGrades_MobileApp\.pub-cache`; configured as the permanent
+  user `PUB_CACHE` so future dependency work does not consume drive C.
+- Flutter still reports a forward-looking Built-in Kotlin migration warning for
+  the app and several third-party plugins. It is not a current build failure;
+  both signed release artifacts completed with the versions above.
 
 ## Paymob state
 

@@ -26,7 +26,7 @@ val hasReleaseKeystore =
     signingProperty("storePassword") != null
 
 android {
-    namespace = "com.baselashraf.studygrades"
+    namespace = "com.studygrades.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -40,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.baselashraf.studygrades"
+        applicationId = "com.studygrades.app"
         // App needs minSdk 23+ for speech_to_text, record, and secure storage
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion

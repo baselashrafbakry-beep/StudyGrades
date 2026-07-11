@@ -775,10 +775,11 @@ class _GradingScreenState extends State<GradingScreen>
     required bool showSettingsDialog,
   }) async {
     final result = await voiceService.requestMicrophoneAccess();
-    if (result == MicrophonePermissionResult.granted) return true;
+    if (result == MicPermissionResult.granted) return true;
     if (!mounted) return false;
 
-    if (result == MicrophonePermissionResult.permanentlyDenied &&
+    if ((result == MicPermissionResult.permanentlyDenied ||
+            result == MicPermissionResult.restricted) &&
         showSettingsDialog) {
       final open = await showDialog<bool>(
         context: context,

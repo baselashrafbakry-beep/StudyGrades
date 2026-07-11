@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/academic_period.dart';
+import 'package:study_grades_voice/models/academic_period.dart';
 
 void main() {
   group('AcademicPeriod', () {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/pending_sync.dart';
+import 'package:study_grades_voice/models/pending_sync.dart';
 
 void main() {
   PendingSync syncFor(String owner) {

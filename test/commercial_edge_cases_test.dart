@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/pending_sync.dart';
-import 'package:voice_grader/models/student_model.dart';
-import 'package:voice_grader/models/subscription_model.dart';
-import 'package:voice_grader/models/user_model.dart';
-import 'package:voice_grader/services/analytics_service.dart';
-import 'package:voice_grader/services/auth_session_epoch.dart';
-import 'package:voice_grader/services/nlp_parser.dart';
-import 'package:voice_grader/services/sync_request_identity.dart';
+import 'package:study_grades_voice/models/pending_sync.dart';
+import 'package:study_grades_voice/models/student_model.dart';
+import 'package:study_grades_voice/models/subscription_model.dart';
+import 'package:study_grades_voice/models/user_model.dart';
+import 'package:study_grades_voice/services/analytics_service.dart';
+import 'package:study_grades_voice/services/auth_session_epoch.dart';
+import 'package:study_grades_voice/services/nlp_parser.dart';
+import 'package:study_grades_voice/services/sync_request_identity.dart';
 
 PendingSync _pending({required String timestamp, double grade = 8}) {
   return PendingSync(
@@ -122,21 +122,24 @@ void main() {
       expect(student.isLocked, isTrue);
     });
 
-    test('analytics ignore grades for fields outside the current structure', () {
-      final fields = [GradeField(name: 'oral', label: 'Oral', max: 10)];
-      final student = Student(
-        id: 1,
-        studentNumber: '1',
-        name: 'Student',
-        grades: {'oral': 5, 'removed_field': 99},
-      );
+    test(
+      'analytics ignore grades for fields outside the current structure',
+      () {
+        final fields = [GradeField(name: 'oral', label: 'Oral', max: 10)];
+        final student = Student(
+          id: 1,
+          studentNumber: '1',
+          name: 'Student',
+          grades: {'oral': 5, 'removed_field': 99},
+        );
 
-      final stats = AnalyticsService.calculate([student], fields);
+        final stats = AnalyticsService.calculate([student], fields);
 
-      expect(stats.averageScore, 5);
-      expect(stats.highestScore, 5);
-      expect(stats.successRate, 100);
-    });
+        expect(stats.averageScore, 5);
+        expect(stats.highestScore, 5);
+        expect(stats.successRate, 100);
+      },
+    );
   });
 
   group('Commercial entitlement fail-closed behavior', () {

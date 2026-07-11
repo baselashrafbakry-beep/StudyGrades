@@ -17,7 +17,7 @@
 
 تم ضبط كل التالي مسبقاً:
 
-✅ **Bundle Identifier**: `com.voicegrader.grader` (مطابق لـ Android)
+✅ **Bundle Identifier**: `com.studygrades.app` (مطابق لـ Android)
 ✅ **Display Name**: `StudyGrades 2026`
 ✅ **Bundle Name**: `StudyGrades`
 ✅ **Orientation**: Portrait فقط
@@ -58,7 +58,7 @@ open ios/Runner.xcworkspace
 ### 4. تكوين التوقيع (Signing)
 - في Xcode: حدد **Runner** ← **Signing & Capabilities**
 - اختر **Team** (حساب Apple Developer)
-- تأكد من **Bundle Identifier** = `com.voicegrader.grader`
+- تأكد من **Bundle Identifier** = `com.studygrades.app`
 - اضغط **Automatically manage signing**
 
 ### 5. بناء IPA للتوزيع

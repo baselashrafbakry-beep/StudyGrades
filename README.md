@@ -104,7 +104,8 @@ lib/
 - **APK**: https://studygrades-2026.netlify.app/downloads/StudyGrades2026.apk
 - **AAB**: https://studygrades-2026.netlify.app/downloads/StudyGrades2026.aab
 - **PWA**: https://studygrades-2026.netlify.app/app/
-- **API**: https://studygrades2026.pythonanywhere.com/api/mobile/
+
+> ⚠️ **ملاحظة**: نقطة نهاية الـ API المذكورة سابقاً (`pythonanywhere.com/api/mobile/`) غير متاحة حالياً (404) — يُرجى تحديث عنوان الـ Backend الفعلي هنا عند توفره.
 
 ---
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/student_model.dart';
+import 'package:study_grades_voice/models/student_model.dart';
 
 void main() {
   group('GradeField', () {

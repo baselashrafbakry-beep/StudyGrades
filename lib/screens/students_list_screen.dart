@@ -49,8 +49,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         case _FilterMode.pending:
           return !s.isCompleteFor(fields);
         case _FilterMode.passed:
-          return totalPossible > 0 &&
-              s.totalFor(fields) >= totalPossible * 0.5;
+          return totalPossible > 0 && s.totalFor(fields) >= totalPossible * 0.5;
         case _FilterMode.failed:
           return totalPossible > 0 &&
               s.grades.isNotEmpty &&

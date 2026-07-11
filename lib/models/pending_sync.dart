@@ -100,10 +100,11 @@ class PendingSyncQueue {
     required PendingSync incoming,
     required int maxItemsForOwner,
   }) {
-    final updated = current
-        .where((entry) => !entry.hasSameTarget(incoming))
-        .toList(growable: true)
-      ..add(incoming);
+    final updated =
+        current
+            .where((entry) => !entry.hasSameTarget(incoming))
+            .toList(growable: true)
+          ..add(incoming);
     final ownerCount = updated
         .where((entry) => entry.ownerKey == incoming.ownerKey)
         .length;
@@ -121,9 +122,7 @@ class PendingSyncQueue {
   }) {
     final deliveredRevisions = delivered.toList(growable: false);
     return current
-        .where(
-          (entry) => !deliveredRevisions.any(entry.hasSameRevision),
-        )
+        .where((entry) => !deliveredRevisions.any(entry.hasSameRevision))
         .toList(growable: false);
   }
 }

@@ -6,7 +6,66 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../utils/error_handler.dart';
 
-enum MicrophonePermissionResult { granted, denied, permanentlyDenied }
+enum MicPermissionResult { granted, denied, permanentlyDenied, restricted }
+
+enum VoiceErrorType {
+  noSpeechDetected,
+  audioHardware,
+  permissionDenied,
+  network,
+  busy,
+  languageUnavailable,
+  unknown,
+}
+
+extension VoiceErrorTypeMessage on VoiceErrorType {
+  String get arabicMessage {
+    switch (this) {
+      case VoiceErrorType.noSpeechDetected:
+        return 'لم يتم سماع صوت واضح. حاول مرة أخرى في مكان أكثر هدوءاً.';
+      case VoiceErrorType.audioHardware:
+        return 'تعذر استخدام الميكروفون. تحقق من اتصاله وأغلق التطبيقات الأخرى التي تستخدمه.';
+      case VoiceErrorType.permissionDenied:
+        return 'صلاحية الميكروفون غير متاحة. فعّلها من إعدادات التطبيق.';
+      case VoiceErrorType.network:
+        return 'تعذر الوصول إلى خدمة التعرف الصوتي. تحقق من الاتصال وحاول مجدداً.';
+      case VoiceErrorType.busy:
+        return 'محرك التعرف الصوتي مشغول حالياً. انتظر لحظة ثم أعد المحاولة.';
+      case VoiceErrorType.languageUnavailable:
+        return 'التعرف الصوتي باللغة العربية غير متاح على هذا الجهاز.';
+      case VoiceErrorType.unknown:
+        return 'تعذر إكمال التعرف الصوتي. يمكنك إدخال الدرجة يدوياً.';
+    }
+  }
+}
+
+VoiceErrorType classifyVoiceError(String rawCode) {
+  final code = rawCode.trim().toLowerCase();
+  switch (code) {
+    case 'error_no_match':
+    case 'error_speech_timeout':
+      return VoiceErrorType.noSpeechDetected;
+    case 'error_audio_error':
+    case 'error_client':
+      return VoiceErrorType.audioHardware;
+    case 'error_permission':
+    case 'error_permission_denied':
+      return VoiceErrorType.permissionDenied;
+    case 'error_network':
+    case 'error_network_timeout':
+    case 'error_server':
+    case 'error_server_disconnected':
+      return VoiceErrorType.network;
+    case 'error_busy':
+    case 'error_too_many_requests':
+      return VoiceErrorType.busy;
+    case 'error_language_not_supported':
+    case 'error_language_unavailable':
+      return VoiceErrorType.languageUnavailable;
+    default:
+      return VoiceErrorType.unknown;
+  }
+}
 
 /// Voice recording + on-device speech-to-text service.
 /// Strategy:
@@ -39,17 +98,15 @@ class VoiceService {
   bool get isInitialized => _initialized;
 
   Future<bool> requestPermissions() async {
-    return await requestMicrophoneAccess() ==
-        MicrophonePermissionResult.granted;
+    return await requestMicrophoneAccess() == MicPermissionResult.granted;
   }
 
-  Future<MicrophonePermissionResult> requestMicrophoneAccess() async {
+  Future<MicPermissionResult> requestMicrophoneAccess() async {
     final mic = await Permission.microphone.request();
-    if (mic.isGranted) return MicrophonePermissionResult.granted;
-    if (mic.isPermanentlyDenied || mic.isRestricted) {
-      return MicrophonePermissionResult.permanentlyDenied;
-    }
-    return MicrophonePermissionResult.denied;
+    if (mic.isGranted) return MicPermissionResult.granted;
+    if (mic.isRestricted) return MicPermissionResult.restricted;
+    if (mic.isPermanentlyDenied) return MicPermissionResult.permanentlyDenied;
+    return MicPermissionResult.denied;
   }
 
   Future<bool> openPermissionSettings() => openAppSettings();
@@ -67,8 +124,14 @@ class VoiceService {
           }
         },
         onError: (e) {
-          // Don't crash on transient errors. Mark as not listening.
           _isListening = false;
+          final active = _activeListenCompleter;
+          if (active != null && !active.isCompleted) {
+            active.completeError(classifyVoiceError(e.errorMsg).arabicMessage);
+          }
+          _activeListenCompleter = null;
+          _safetyTimer?.cancel();
+          _safetyTimer = null;
         },
         debugLogging: false,
       );

@@ -131,9 +131,8 @@ changes.
 - Use `build/app/outputs/flutter-apk/app-release.apk` only for direct APK
   distribution/testing outside Google Play.
 
-Current technical caveat: the app builds with Gradle 8.12, Android Gradle
-Plugin 8.9.1, and Kotlin 2.1.0. Flutter warns these versions will need a future
-upgrade. A direct upgrade attempt to Gradle 8.14 / AGP 8.11.1 / Kotlin 2.2.20
-caused an unacceptably long first debug build on this machine, so the project is
-kept on the verified stable versions until the plugin ecosystem is migrated and
-the upgrade can be tested in isolation.
+The Android release is verified with Gradle 8.14.4, Android Gradle Plugin
+8.11.1, and Kotlin 2.2.20. Flutter reports a forward-looking Built-in Kotlin
+migration warning for the app and several third-party plugins; this is not a
+current build failure and must be reassessed when Flutter makes that migration
+mandatory.

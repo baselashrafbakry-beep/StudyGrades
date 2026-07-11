@@ -1,4 +1,4 @@
-package com.baselashraf.studygrades
+package com.studygrades.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/grading_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import 'grading_screen.dart';
 
@@ -68,8 +69,11 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
   ];
 
   final TextEditingController _customCtrl = TextEditingController();
+  bool _isLoading = false; // حماية من double-tap
 
   Future<void> _selectSubject(String subject, String displayName) async {
+    if (_isLoading) return; // منع الضغط المزدوج
+    setState(() => _isLoading = true);
     final grading = context.read<GradingProvider>();
     grading.setAcademicPeriod(termId: _termId, weekNumber: _weekNumber);
     showDialog(
@@ -79,11 +83,15 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
         child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
-    await grading.loadClassroom(
-      classId: widget.classId,
-      className: widget.className,
-      subject: subject,
-    );
+    try {
+      await grading.loadClassroom(
+        classId: widget.classId,
+        className: widget.className,
+        subject: subject,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
 
@@ -119,6 +127,10 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context
+        .watch<
+          ThemeProvider
+        >(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -226,7 +238,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                           onTap: () => _selectSubject(s.key, s.label),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: AppColors.cardBackground,
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(color: Colors.grey.shade200),
                               boxShadow: [
@@ -280,7 +292,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppColors.cardBackground,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.grey.shade200),
                       ),

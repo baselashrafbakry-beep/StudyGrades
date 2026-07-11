@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voice_grader/models/user_model.dart';
-import 'package:voice_grader/services/api_client.dart';
+import 'package:study_grades_voice/models/user_model.dart';
+import 'package:study_grades_voice/services/api_client.dart';
 
 class _FakeSecureStorageChannel {
   static const _channel = MethodChannel(

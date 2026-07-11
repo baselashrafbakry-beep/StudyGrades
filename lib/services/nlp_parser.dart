@@ -400,9 +400,11 @@ class NLPParser {
 
       if (_isFraction(match.value)) {
         if (numbers.isNotEmpty) {
-          numbers[numbers.length - 1] = double.parse(
-            (numbers.last + match.value).toStringAsFixed(3),
-          );
+          if (numbers.last == numbers.last.truncateToDouble()) {
+            numbers[numbers.length - 1] = double.parse(
+              (numbers.last + match.value).toStringAsFixed(3),
+            );
+          }
         } else {
           numbers.add(match.value);
         }
@@ -461,7 +463,8 @@ class NLPParser {
       if (tokens.isEmpty || index + tokens.length > words.length) continue;
       var matched = true;
       for (var offset = 0; offset < tokens.length; offset++) {
-        if (_stripLeadingAnd(words[index + offset]) != tokens[offset]) {
+        if (_stripLeadingAnd(words[index + offset]) !=
+            _stripLeadingAnd(tokens[offset])) {
           matched = false;
           break;
         }

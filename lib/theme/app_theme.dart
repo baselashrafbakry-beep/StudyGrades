@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
+  // ==== حالة الوضع الليلي العامة للتطبيق ====
+  // يتم تحديثها من ThemeProvider عند كل تغيير للسمة (فاتح/داكن/تلقائي)
+  // هذا يسمح بتفعيل الوضع الليلي في كل الشاشات دون الحاجة لتعديل
+  // كل شاشة على حدة لاستخدام Theme.of(context) بشكل صريح.
+  // ==== ألوان العلامة التجارية (ثابتة في كلا الوضعين) ====
   static const Color primary = Color(0xFF1976D2);
   static const Color primaryDark = Color(0xFF0D47A1);
   static const Color primaryLight = Color(0xFF42A5F5);
   static const Color accent = Color(0xFF00C853);
+
+  // ==== ألوان الخلفيات والأسطح (تتغيّر حسب الوضع) ====
   static const Color background = Color(0xFFF5F7FA);
   static const Color surface = Colors.white;
   static const Color cardBackground = Colors.white;
@@ -15,6 +22,7 @@ class AppColors {
   static const Color error = Color(0xFFE53935);
   static const Color info = Color(0xFF29B6F6);
 
+  // ==== ألوان النصوص (تتغيّر حسب الوضع) ====
   static const Color textPrimary = Color(0xFF1A237E);
   static const Color textSecondary = Color(0xFF546E7A);
   static const Color textHint = Color(0xFF90A4AE);

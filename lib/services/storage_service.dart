@@ -103,10 +103,7 @@ class StorageService {
   static Future<void> replacePendingSyncs(List<PendingSync> list) async {
     final ownerAtCall = _activeOwnerKey;
     final scoped = list
-        .map(
-          (s) =>
-              s.ownerKey == ownerAtCall ? s : s.withOwner(ownerAtCall),
-        )
+        .map((s) => s.ownerKey == ownerAtCall ? s : s.withOwner(ownerAtCall))
         .toList(growable: false);
     await _withPendingMutation(() async {
       final retained = _getAllPendingSyncs()
