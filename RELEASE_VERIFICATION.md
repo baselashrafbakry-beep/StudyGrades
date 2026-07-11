@@ -15,13 +15,12 @@ Verification date: 2026-07-11 (Africa/Cairo)
 - Flutter static analysis: no issues found.
 - Flutter test suite: 120 passed, 0 failed.
 
-The current workstation network cannot establish TCP port 443 connections to
-the resolved Netlify CDN addresses. Live HTTP requests therefore time out before
-reaching the service. This is recorded as a network-path limitation, not treated
-as a successful endpoint check. The same endpoints were successfully exercised
-before the latest hardening deployment, and the latest deployment completed in
-Netlify, but an external post-deployment smoke test is still required when that
-network path is available.
+GitHub Actions run `29142782342` performed the post-deployment smoke test from
+an independent Ubuntu runner. It verified the production health response,
+confirmed that unauthenticated admin access returns 401, confirmed that an
+unsigned Paymob webhook returns 401, and confirmed that the payment return page
+publishes a Content-Security-Policy header. The same run passed formatting,
+static analysis, all Flutter tests, Web build, and Android debug build.
 
 ## Android artifacts
 
