@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,18 +8,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../providers/grading_provider.dart';
 import '../providers/auth_provider.dart';
-import '../services/admin_service.dart';
+import '../models/student_model.dart';
 import '../services/api_client.dart';
 import '../services/voice_service.dart';
 import '../services/nlp_parser.dart';
 import '../services/analytics_service.dart';
 import '../services/pdf_export_service.dart';
-import '../services/subscription_service.dart';
-import '../providers/theme_provider.dart';
+import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/recording_button.dart';
 import '../widgets/grade_field_card.dart';
-import '../widgets/upgrade_required_dialog.dart';
 import 'students_list_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -55,20 +56,14 @@ class GradingScreen extends StatefulWidget {
   State<GradingScreen> createState() => _GradingScreenState();
 }
 
-class _GradingScreenState extends State<GradingScreen> {
+class _GradingScreenState extends State<GradingScreen>
+    with WidgetsBindingObserver {
   // ===== Voice state =====
   bool _isProcessing = false;
   String _transcript = '';
   bool _useServerTranscription = false;
-
-  /// سقف إداري: عندما يُعطّل المطور "الإدخال الصوتي السحابي" من إعدادات
-  /// النظام، لا يُسمح باستخدام مسار Whisper AI (السيرفر) إطلاقاً هنا،
-  /// حتى لو كان المستخدم قد فعّله سابقاً في هذه الجلسة.
-  bool _serverSpeechAllowedBySystem = true;
-
-  /// سقف إداري: عندما يُعطّل المطور "الوضع الأوفلاين" من إعدادات النظام،
-  /// يُمنع المستخدم من الاستمرار في الرصد بدون اتصال إنترنت فعلي.
-  bool _offlineModeAllowedBySystem = true;
+  bool _speechChecked = false;
+  bool _speechAvailable = false;
 
   // ===== Smart mode (auto-advance + continuous listen) =====
   bool _smartMode = true;
@@ -76,6 +71,7 @@ class _GradingScreenState extends State<GradingScreen> {
   bool _autoLoopActive = false;
   bool _isStoppingLoop = false;
   bool _showingConfirm = false;
+  int? _lastObservedStudentIndex;
 
   // Highlight tracking for visual feedback
   String? _justFilledField;
@@ -83,164 +79,64 @@ class _GradingScreenState extends State<GradingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initVoice();
-    _loadSystemFeatureFlags();
-    // تتبع استخدام: بدء جلسة رصد جديدة (لأغراض إحصاءات المطور فقط،
-    // ولا يعمل إطلاقاً إذا كانت التحليلات معطّلة من إعدادات النظام)
-    AdminService.trackEvent('grading_session_started');
-  }
-
-  Future<void> _loadSystemFeatureFlags() async {
-    final serverSpeechAllowed = await AdminService.isServerSpeechEnabled();
-    final offlineAllowed = await AdminService.isOfflineModeEnabled();
-    if (!mounted) return;
-    setState(() {
-      _serverSpeechAllowedBySystem = serverSpeechAllowed;
-      _offlineModeAllowedBySystem = offlineAllowed;
-      // إذا عطّل المطور الميزة على مستوى النظام، أوقف استخدامها فوراً
-      // حتى لو كانت مفعّلة محلياً في نفس الجلسة.
-      if (!serverSpeechAllowed) _useServerTranscription = false;
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadVoiceSettings());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _autoLoopActive = false;
-    // فكّ ربط استدعاء الأخطاء الصوتية قبل التخلص من الشاشة لمنع استدعاء
-    // _toast() على شاشة لم تعد موجودة (الـ voiceService عبارة عن singleton
-    // يعيش أطول من عمر هذه الشاشة).
-    voiceService.onVoiceError = null;
-    voiceService.cancelListening();
+    unawaited(voiceService.cancelListening());
     super.dispose();
   }
 
-  Future<void> _initVoice() async {
-    final result = await voiceService.requestMicPermission();
-    if (!mounted) return;
-
-    switch (result) {
-      case MicPermissionResult.granted:
-        break; // تابع التهيئة العادية أدناه
-      case MicPermissionResult.permanentlyDenied:
-        // رُفضت الصلاحية نهائياً — لا فائدة من طلبها مجدداً برمجياً،
-        // يجب توجيه المستخدم لإعدادات النظام يدوياً.
-        await _showMicPermissionSettingsDialog();
-        return;
-      case MicPermissionResult.restricted:
-        _toast(
-          'الميكروفون غير متاح على هذا الجهاز بسبب قيود النظام',
-          error: true,
-        );
-        return;
-      case MicPermissionResult.denied:
-        _toast('برجاء السماح باستخدام الميكروفون', error: true);
-        return;
-    }
-
-    // اربط استدعاء الأخطاء الصوتية الفورية (ضوضاء/انقطاع ميكروفون/شبكة...)
-    // كي تظهر رسالة عربية واضحة للمستخدم بمجرد وقوع الخطأ، بدل انتظار
-    // نهاية الجلسة بصمت.
-    voiceService.onVoiceError = (type, rawMessage) {
-      if (!mounted) return;
-      // لا نُضايق المستخدم برسالة "لم يُسمع كلام" إذا لم يكن الوضع
-      // التلقائي أو التسجيل شغّالاً أصلاً (مثلاً بعد إيقاف الجلسة).
-      if (!_autoLoopActive && !voiceService.isRecording) return;
-      _toast(type.arabicMessage, error: true);
-    };
-
-    await voiceService.initSpeech();
-    if (mounted) {
-      // Force rebuild so first-empty field gets highlighted
-      setState(() => _resetFieldFocus(toFirstEmpty: true));
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_stopAutoLoop(silent: true));
     }
   }
 
-  /// حوار يوضّح للمستخدم أن صلاحية الميكروفون مرفوضة نهائياً، مع زر
-  /// مباشر لفتح إعدادات التطبيق لتفعيلها يدوياً.
-  Future<void> _showMicPermissionSettingsDialog() async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mic_off_rounded,
-                    color: AppColors.error,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'صلاحية الميكروفون مرفوضة',
-                  style: GoogleFonts.cairo(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'لا يمكن استخدام الرصد الصوتي بدون صلاحية الميكروفون.\n'
-                  'برجاء فتح إعدادات التطبيق وتفعيل صلاحية الميكروفون يدوياً.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: Text(
-                          'لاحقاً',
-                          style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          await voiceService.openSystemSettings();
-                        },
-                        child: Text(
-                          'افتح الإعدادات',
-                          style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  Future<void> _initVoice() async {
+    if (!await _ensureMicrophonePermission(showSettingsDialog: false)) {
+      return;
+    }
+    final ok = await voiceService.initSpeech();
+    if (mounted) {
+      // Force rebuild so first-empty field gets highlighted
+      setState(() {
+        _speechChecked = true;
+        _speechAvailable = ok;
+        _resetFieldFocus(toFirstEmpty: true);
+      });
+    }
+  }
+
+  Future<void> _loadVoiceSettings() async {
+    final enabled =
+        StorageService.getSetting<bool>(
+          'use_server_speech',
+          defaultValue: false,
+        ) ??
+        false;
+    final allowed =
+        context
+            .read<AuthProvider>()
+            .user
+            ?.subscription
+            .canUseServerTranscription ??
+        false;
+    if (enabled && !allowed) {
+      await StorageService.setSetting('use_server_speech', false);
+    }
+    if (mounted) {
+      setState(() => _useServerTranscription = enabled && allowed);
+    }
   }
 
   void _toast(String msg, {bool error = false, bool success = false}) {
@@ -250,8 +146,8 @@ class _GradingScreenState extends State<GradingScreen> {
       backgroundColor: error
           ? AppColors.error
           : success
-              ? AppColors.success
-              : AppColors.primary,
+          ? AppColors.success
+          : AppColors.primary,
       textColor: Colors.white,
       toastLength: Toast.LENGTH_SHORT,
     );
@@ -269,7 +165,8 @@ class _GradingScreenState extends State<GradingScreen> {
       if (cur != null) {
         for (var i = 0; i < grading.fields.length; i++) {
           final f = grading.fields[i];
-          if (!cur.grades.containsKey(f.name)) {
+          final value = cur.grades[f.name];
+          if (value == null || !value.isFinite) {
             _currentFieldIndex = i;
             return;
           }
@@ -296,6 +193,32 @@ class _GradingScreenState extends State<GradingScreen> {
     if (!silent && mounted) _toast('تم إيقاف الوضع التلقائي');
   }
 
+  Future<bool> _ensureSpeechRecognizerAvailable() async {
+    if (!voiceService.speechAvailable) {
+      final ok = await voiceService.initSpeech();
+      if (mounted) {
+        setState(() {
+          _speechChecked = true;
+          _speechAvailable = ok;
+        });
+      }
+      if (!ok) {
+        _toast(
+          'التعرف الصوتي غير متاح على هذا الجهاز؛ استخدم الإدخال اليدوي',
+          error: true,
+        );
+        return false;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _speechChecked = true;
+        _speechAvailable = true;
+      });
+    }
+    return true;
+  }
+
   Future<void> _startAutoLoop() async {
     HapticFeedback.mediumImpact();
     final grading = context.read<GradingProvider>();
@@ -304,13 +227,7 @@ class _GradingScreenState extends State<GradingScreen> {
       return;
     }
 
-    if (!voiceService.speechAvailable) {
-      final ok = await voiceService.initSpeech();
-      if (!ok) {
-        _toast('التعرف الصوتي غير متاح، فعّل خدمات Google', error: true);
-        return;
-      }
-    }
+    if (!await _ensureSpeechRecognizerAvailable()) return;
 
     _resetFieldFocus(toFirstEmpty: true);
     _autoLoopActive = true;
@@ -399,15 +316,18 @@ class _GradingScreenState extends State<GradingScreen> {
       _toast('الطالب السابق');
       return _SmartAction.previous;
     }
-    if (result.hasNext) {
-      await _showConfirmAndAdvance(autoAdvance: true);
-      return _SmartAction.next;
-    }
-    if (result.hasSave) {
+    if (result.hasSave && result.numbers.isEmpty) {
       await _save(silent: false);
       return _SmartAction.stop;
     }
-
+    if ((result.hasNext || result.hasConfirm) && result.numbers.isEmpty) {
+      final advance = await _doAdvanceToNext();
+      return switch (advance) {
+        _AdvanceResult.advanced => _SmartAction.next,
+        _AdvanceResult.completed => _SmartAction.stop,
+        _AdvanceResult.blocked => _SmartAction.none,
+      };
+    }
     // Voice command "كاملة" / "full" -> assign max to current field
     if (result.hasFull) {
       final fields = grading.fields;
@@ -429,7 +349,18 @@ class _GradingScreenState extends State<GradingScreen> {
       return _SmartAction.none;
     }
 
-    return await _assignNumbersSequentially(result.numbers, grading);
+    final action = await _assignNumbersSequentially(result.numbers, grading);
+    if (action == _SmartAction.assigned || action == _SmartAction.none) {
+      if (result.hasSave) {
+        await _save(silent: false);
+        return _SmartAction.stop;
+      }
+      if (result.hasNext || result.hasConfirm) {
+        await _showConfirmAndAdvance(autoAdvance: true);
+        return _SmartAction.next;
+      }
+    }
+    return action;
   }
 
   Future<_SmartAction> _assignNumbersSequentially(
@@ -473,9 +404,7 @@ class _GradingScreenState extends State<GradingScreen> {
   }
 
   Future<_SmartAction> _onAllFieldsFilled() async {
-    // لا نوقف _autoLoopActive هنا — نتركه true حتى يقرر الـ dialog
-    // نوقف الاستماع مؤقتاً فقط
-    await voiceService.cancelListening();
+    _autoLoopActive = false;
     await Future.delayed(const Duration(milliseconds: 350));
     if (!mounted) return _SmartAction.stop;
 
@@ -484,26 +413,22 @@ class _GradingScreenState extends State<GradingScreen> {
     _showingConfirm = false;
 
     if (confirmed == true) {
-      await _doAdvanceToNext();
+      final advance = await _doAdvanceToNext();
       if (!mounted) return _SmartAction.stop;
-      final grading = context.read<GradingProvider>();
-      if (grading.currentStudent != null) {
-        // لا زال هناك طلاب — أعد تفعيل الحلقة
+      if (advance == _AdvanceResult.advanced) {
         _autoLoopActive = true;
         _resetFieldFocus(toFirstEmpty: true);
-      } else {
-        // انتهت القائمة
-        _autoLoopActive = false;
+        return _SmartAction.next;
       }
-      return _SmartAction.next;
+      return _SmartAction.stop;
     } else if (confirmed == false) {
-      // وضع التعديل — أعد الاستماع
-      _resetFieldFocus(toFirstEmpty: true);
-      _autoLoopActive = true;
+      // edit mode
+      _autoLoopActive = false;
+      _currentFieldIndex = 0;
+      if (mounted) setState(() {});
       return _SmartAction.none;
     } else {
-      // إغلاق بالضغط خارج الـ dialog → إيقاف الحلقة
-      _autoLoopActive = false;
+      // dismissed -> stop loop
       return _SmartAction.stop;
     }
   }
@@ -513,24 +438,33 @@ class _GradingScreenState extends State<GradingScreen> {
     await _doAdvanceToNext();
   }
 
-  Future<void> _doAdvanceToNext() async {
+  Future<_AdvanceResult> _doAdvanceToNext() async {
     final grading = context.read<GradingProvider>();
-    await _save(silent: true);
-    if (!mounted) return;
+    final result = await _save(silent: true);
+    if (!mounted) return _AdvanceResult.blocked;
+    if (result == SaveStudentResult.noGrades ||
+        result == SaveStudentResult.queueFull ||
+        result == SaveStudentResult.subscriptionBlocked) {
+      _toast(switch (result) {
+        SaveStudentResult.queueFull =>
+          'قائمة المزامنة ممتلئة؛ صِل بالإنترنت وزامن البيانات أولاً',
+        SaveStudentResult.subscriptionBlocked =>
+          grading.error ?? 'الاشتراك لا يسمح بحفظ الدرجات حالياً',
+        _ => 'لا توجد درجات لحفظها',
+      }, error: true);
+      return _AdvanceResult.blocked;
+    }
     if (grading.currentIndex >= grading.students.length - 1) {
-      // آخر طالب — ننهي الجلسة ونُفعّل شاشة الاحتفال
       _autoLoopActive = false;
+      _toast('انتهيت من جميع الطلاب 🎉', success: true);
       HapticFeedback.heavyImpact();
-      // finishGrading() يرفع علم _gradingFinished → currentStudent يُرجع null
-      // → الشرط (cur == null) في build() يُظهر شاشة الاحتفال
-      grading.finishGrading();
-      if (mounted) setState(() {});
-      return;
+      return _AdvanceResult.completed;
     }
     grading.nextStudent();
     _resetFieldFocus(toFirstEmpty: true);
     if (mounted) setState(() {});
     _toast('الطالب التالي');
+    return _AdvanceResult.advanced;
   }
 
   Future<bool?> _showConfirmDialog() async {
@@ -538,8 +472,9 @@ class _GradingScreenState extends State<GradingScreen> {
     final cur = grading.currentStudent;
     if (cur == null) return null;
     final totalPossible = grading.fields.fold<double>(0, (s, f) => s + f.max);
+    final studentTotal = cur.totalFor(grading.fields);
     final pct = totalPossible > 0
-        ? (cur.total / totalPossible * 100).toStringAsFixed(1)
+        ? (studentTotal / totalPossible * 100).toStringAsFixed(1)
         : '0';
     final isLast = grading.currentIndex >= grading.students.length - 1;
 
@@ -595,56 +530,74 @@ class _GradingScreenState extends State<GradingScreen> {
                     color: AppColors.primary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Column(
-                    children: [
-                      ...grading.fields.map((f) {
-                        final v = cur.grades[f.name];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.32,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          ...grading.fields.map((f) {
+                            final v = cur.grades[f.name];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      f.label,
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 13,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    v == null
+                                        ? '—'
+                                        : '${_fmt(v)} / ${_fmt(f.max)}',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          const Divider(),
+                          Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                f.label,
+                                'المجموع',
                                 style: GoogleFonts.cairo(
-                                  fontSize: 13,
-                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              Text(
-                                v == null ? '—' : '${_fmt(v)} / ${_fmt(f.max)}',
-                                style: GoogleFonts.cairo(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primary,
+                              Flexible(
+                                child: Text(
+                                  '${_fmt(studentTotal)} / ${_fmt(totalPossible)}  ($pct%)',
+                                  textAlign: TextAlign.end,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.success,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        );
-                      }),
-                      const Divider(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'المجموع',
-                            style: GoogleFonts.cairo(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${_fmt(cur.total)} / ${_fmt(totalPossible)}  ($pct%)',
-                            style: GoogleFonts.cairo(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.success,
-                            ),
-                          ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -717,6 +670,10 @@ class _GradingScreenState extends State<GradingScreen> {
   // =================== Manual mode (legacy / fallback) ===================
   Future<void> _toggleRecord() async {
     HapticFeedback.mediumImpact();
+    if (!await _ensureMicrophonePermission(showSettingsDialog: true)) {
+      return;
+    }
+    if (!mounted) return;
 
     if (_smartMode) {
       if (_autoLoopActive || voiceService.isListening) {
@@ -727,6 +684,7 @@ class _GradingScreenState extends State<GradingScreen> {
       return;
     }
 
+    if (!mounted) return;
     final grading = context.read<GradingProvider>();
     if (voiceService.isListening) {
       await voiceService.stopListening();
@@ -749,11 +707,18 @@ class _GradingScreenState extends State<GradingScreen> {
       });
     }
 
-    // فرض السقف الإداري: امنع استخدام مسار السيرفر (Whisper AI) إذا
-    // كان المطور قد عطّله من إعدادات النظام، حتى لو كان المفتاح المحلي
-    // لا يزال مفعّلاً من جلسة سابقة.
-    final useServer = _useServerTranscription && _serverSpeechAllowedBySystem;
-    if (useServer) {
+    if (_useServerTranscription) {
+      final subscription = context.read<AuthProvider>().user?.subscription;
+      if (subscription?.canUseServerTranscription != true) {
+        await StorageService.setSetting('use_server_speech', false);
+        if (mounted) setState(() => _useServerTranscription = false);
+        _toast(
+          subscription?.blockedMessage('Whisper AI') ??
+              'يلزم تسجيل الدخول لاستخدام Whisper AI',
+          error: true,
+        );
+        return;
+      }
       try {
         await voiceService.startRecording();
         if (mounted) setState(() {});
@@ -761,6 +726,7 @@ class _GradingScreenState extends State<GradingScreen> {
         _toast(e.toString(), error: true);
       }
     } else {
+      if (!await _ensureSpeechRecognizerAvailable()) return;
       try {
         final text = await voiceService.listenOnce(
           onPartial: (p) {
@@ -769,7 +735,7 @@ class _GradingScreenState extends State<GradingScreen> {
         );
         if (mounted) setState(() {});
         if (text.isNotEmpty) {
-          _processVoiceResult(text, grading);
+          await _processVoiceResult(text, grading);
         } else {
           _toast('لم يتم التعرف على أي كلام، حاول مرة أخرى');
         }
@@ -786,33 +752,72 @@ class _GradingScreenState extends State<GradingScreen> {
       final text = await apiClient.transcribeAudio(path);
       if (mounted) setState(() => _transcript = text);
       if (text.isNotEmpty && mounted) {
-        _processVoiceResult(text, context.read<GradingProvider>());
+        await _processVoiceResult(text, context.read<GradingProvider>());
       } else {
         _toast('لم يتم التعرف على الصوت');
       }
     } catch (e) {
       _toast('فشل تحويل الصوت: $e', error: true);
     } finally {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {
+        // Best-effort cleanup only.
+      }
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  void _processVoiceResult(String text, GradingProvider grading) {
+  Future<bool> _ensureMicrophonePermission({
+    required bool showSettingsDialog,
+  }) async {
+    final result = await voiceService.requestMicrophoneAccess();
+    if (result == MicPermissionResult.granted) return true;
+    if (!mounted) return false;
+
+    if ((result == MicPermissionResult.permanentlyDenied ||
+            result == MicPermissionResult.restricted) &&
+        showSettingsDialog) {
+      final open = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('صلاحية الميكروفون', style: GoogleFonts.cairo()),
+          content: Text(
+            'تم رفض صلاحية الميكروفون نهائياً. افتح إعدادات التطبيق لتفعيلها.',
+            style: GoogleFonts.cairo(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('إلغاء', style: GoogleFonts.cairo()),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('فتح الإعدادات', style: GoogleFonts.cairo()),
+            ),
+          ],
+        ),
+      );
+      if (open == true) {
+        await voiceService.openPermissionSettings();
+      }
+    } else {
+      _toast('برجاء السماح باستخدام الميكروفون', error: true);
+    }
+    return false;
+  }
+
+  Future<void> _processVoiceResult(String text, GradingProvider grading) async {
     final result = NLPParser.parse(text);
     HapticFeedback.lightImpact();
 
-    if (result.hasNext) {
-      _saveAndNext();
-      return;
-    }
     if (result.hasPrevious) {
       grading.previousStudent();
       _resetFieldFocus(toFirstEmpty: true);
       _toast('الطالب السابق');
-      return;
-    }
-    if (result.hasSave) {
-      _save(silent: false);
       return;
     }
     if (result.hasClear) {
@@ -829,6 +834,7 @@ class _GradingScreenState extends State<GradingScreen> {
       return;
     }
 
+    var assignedNumbers = false;
     if (result.numbers.isNotEmpty) {
       final cur = grading.currentStudent;
       if (cur == null) return;
@@ -845,42 +851,87 @@ class _GradingScreenState extends State<GradingScreen> {
           _justFilledField = updated.keys.isNotEmpty ? updated.keys.last : null;
         });
       }
+      assignedNumbers = true;
       _toast('تم رصد ${result.numbers.length} درجة', success: true);
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _justFilledField = null);
       });
-    } else {
+    }
+
+    if (result.hasSave) {
+      await _save(silent: false);
+      return;
+    }
+    if (result.hasNext || result.hasConfirm) {
+      await _saveAndNext();
+      return;
+    }
+
+    if (!assignedNumbers) {
       _toast('لم يتم التعرف على أرقام');
     }
   }
 
   // =================== Save / Export / Stats ===================
-  Future<void> _save({bool silent = false}) async {
+  Future<SaveStudentResult> _save({bool silent = false}) async {
     final grading = context.read<GradingProvider>();
-    final ok = await grading.saveCurrentStudent();
-    if (!mounted) return;
-    if (ok) {
-      AdminService.trackEvent('grade_synced_online');
-      if (!silent) _toast('تم حفظ الدرجات على السيرفر', success: true);
-    } else {
-      AdminService.trackEvent('grade_saved_locally');
-      if (!silent) {
-        _toast('تم الحفظ محلياً، سيتم المزامنة تلقائياً عند توفر الإنترنت');
+    final result = await grading.saveCurrentStudent();
+    if (!mounted) return result;
+    if (!silent) {
+      switch (result) {
+        case SaveStudentResult.synced:
+          _toast('تم حفظ الدرجات على السيرفر', success: true);
+          break;
+        case SaveStudentResult.queued:
+          _toast('تم الحفظ محلياً، سيتم المزامنة تلقائياً عند توفر الإنترنت');
+          break;
+        case SaveStudentResult.localOnly:
+          _toast('تم حفظ الدرجات محلياً لوضع العرض', success: true);
+          break;
+        case SaveStudentResult.noGrades:
+          _toast('لا توجد درجات لحفظها', error: true);
+          break;
+        case SaveStudentResult.queueFull:
+          _toast(
+            'قائمة المزامنة ممتلئة؛ صِل بالإنترنت وزامن البيانات أولاً',
+            error: true,
+          );
+          break;
+        case SaveStudentResult.subscriptionBlocked:
+          _toast(
+            grading.error ?? 'الاشتراك لا يسمح بحفظ الدرجات حالياً',
+            error: true,
+          );
+          break;
       }
     }
-    HapticFeedback.heavyImpact();
+    if (result != SaveStudentResult.noGrades &&
+        result != SaveStudentResult.queueFull &&
+        result != SaveStudentResult.subscriptionBlocked) {
+      HapticFeedback.heavyImpact();
+    }
+    return result;
   }
 
   Future<void> _saveAndNext() async {
-    await _save(silent: true);
+    final result = await _save(silent: true);
     if (!mounted) return;
+    if (result == SaveStudentResult.noGrades ||
+        result == SaveStudentResult.queueFull ||
+        result == SaveStudentResult.subscriptionBlocked) {
+      final grading = context.read<GradingProvider>();
+      _toast(switch (result) {
+        SaveStudentResult.queueFull =>
+          'قائمة المزامنة ممتلئة؛ صِل بالإنترنت وزامن البيانات أولاً',
+        SaveStudentResult.subscriptionBlocked =>
+          grading.error ?? 'الاشتراك لا يسمح بحفظ الدرجات حالياً',
+        _ => 'لا توجد درجات لحفظها',
+      }, error: true);
+      return;
+    }
     final grading = context.read<GradingProvider>();
     if (grading.currentIndex >= grading.students.length - 1) {
-      // آخر طالب — ننهي الجلسة ونُظهر شاشة الاحتفال
-      _autoLoopActive = false;
-      HapticFeedback.heavyImpact();
-      grading.finishGrading();
-      if (mounted) setState(() {});
+      _toast('انتهيت من جميع الطلاب 🎉', success: true);
       return;
     }
     grading.nextStudent();
@@ -889,63 +940,21 @@ class _GradingScreenState extends State<GradingScreen> {
     _toast('الطالب التالي');
   }
 
-  /// فتح لوحة التحليلات (Dashboard) مع فرض التحقق من الاشتراك أولاً —
-  /// هذه الميزة غير متاحة لباقة "مجاني"، وتتطلب باقة أساسي فأعلى.
-  Future<void> _openDashboard() async {
-    final allowed = await SubscriptionService.hasFeature('analytics');
-    if (!mounted) return;
-    if (!allowed) {
-      await UpgradeRequiredDialog.show(
-        context,
-        featureNameAr: 'لوحة التحليلات',
-        requiredPlanAr: 'أساسي',
-        icon: Icons.analytics_rounded,
-      );
-      return;
-    }
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => DashboardScreen(
-          className: widget.className,
-          subject: widget.subject,
-        ),
-      ),
-    );
-  }
-
   Future<void> _exportExcel() async {
     final grading = context.read<GradingProvider>();
     final auth = context.read<AuthProvider>();
-    if (grading.students.isEmpty) {
-      _toast('لا يوجد طلاب للتصدير', error: true);
-      return;
-    }
-    // تنبيه المستخدم عند عدم وجود بنود تقييم مُعرَّفة لهذه المادة — لن يظهر
-    // في الملف سوى بيانات الطلاب بدون درجات (متوسط/مجموع = صفر). يُسمح
-    // بالمتابعة (الملف الآن يُصدَّر بشكل سليم دون فقدان بيانات) لكن يجب
-    // إعلام المستخدم لتجنب الالتباس، بنفس النمط المتّبع في _startAutoLoop().
-    if (grading.fields.isEmpty) {
+    if (grading.students.isEmpty) return;
+    final subscription = auth.user?.subscription;
+    if (subscription?.canExportReports != true) {
       _toast(
-        'تنبيه: لا توجد بنود تقييم لهذه المادة — سيتم تصدير كشف بأسماء الطلاب فقط بدون درجات',
+        subscription?.blockedMessage('تصدير Excel') ??
+            'يلزم تسجيل الدخول لتصدير التقارير',
         error: true,
-      );
-    }
-    // فرض الاشتراك: تصدير Excel متاح فقط لباقتَي "احترافي" و"مدرسة"
-    final allowed = await SubscriptionService.hasFeature('export_excel');
-    if (!mounted) return;
-    if (!allowed) {
-      await UpgradeRequiredDialog.show(
-        context,
-        featureNameAr: 'تصدير Excel',
-        requiredPlanAr: 'احترافي',
-        icon: Icons.table_chart_rounded,
       );
       return;
     }
     if (_autoLoopActive) await _stopAutoLoop(silent: true);
-    // على الويب: يُصدَّر CSV تلقائياً (dart:io غير متاح)
-    _toast('جاري إعداد الملف للتصدير...');
+    _toast('جاري إعداد ملف Excel الرسمي...');
     final ok = await AnalyticsService.exportToExcel(
       students: grading.students,
       fields: grading.fields,
@@ -955,43 +964,27 @@ class _GradingScreenState extends State<GradingScreen> {
     );
     if (!mounted) return;
     if (!ok) {
-      _toast('فشل التصدير — حاول مرة أخرى', error: true);
+      _toast('فشل تصدير ملف Excel', error: true);
     } else {
-      AdminService.trackEvent('excel_export_completed');
-      _toast('تم التصدير بنجاح ✅', success: true);
+      _toast('تم تصدير ملف Excel بنجاح', success: true);
     }
   }
 
-  /// تصدير كشف الدرجات كملف PDF رسمي — يعمل عبر جميع المنصات (موبايل +
-  /// ويب) بعكس Excel الذي يتحول تلقائياً لـ CSV على الويب. يخضع لنفس قيد
-  /// الاشتراك المستخدم في تصدير Excel ('export_excel') حتى لا يصبح تصدير
-  /// PDF ثغرة تلتف حول قيود الباقة المجانية.
   Future<void> _exportPdf() async {
     final grading = context.read<GradingProvider>();
     final auth = context.read<AuthProvider>();
-    if (grading.students.isEmpty) {
-      _toast('لا يوجد طلاب للتصدير', error: true);
-      return;
-    }
-    if (grading.fields.isEmpty) {
+    if (grading.students.isEmpty) return;
+    final subscription = auth.user?.subscription;
+    if (subscription?.canExportReports != true) {
       _toast(
-        'تنبيه: لا توجد بنود تقييم لهذه المادة — سيتم تصدير كشف بأسماء الطلاب فقط بدون درجات',
+        subscription?.blockedMessage('تصدير PDF') ??
+            'يلزم تسجيل الدخول لتصدير التقارير',
         error: true,
-      );
-    }
-    final allowed = await SubscriptionService.hasFeature('export_excel');
-    if (!mounted) return;
-    if (!allowed) {
-      await UpgradeRequiredDialog.show(
-        context,
-        featureNameAr: 'تصدير PDF',
-        requiredPlanAr: 'احترافي',
-        icon: Icons.picture_as_pdf_rounded,
       );
       return;
     }
     if (_autoLoopActive) await _stopAutoLoop(silent: true);
-    _toast('جاري إعداد ملف PDF للتصدير...');
+    _toast('جاري إعداد ملف PDF الرسمي...');
     final ok = await PdfExportService.exportToPdf(
       students: grading.students,
       fields: grading.fields,
@@ -1001,82 +994,10 @@ class _GradingScreenState extends State<GradingScreen> {
     );
     if (!mounted) return;
     if (!ok) {
-      _toast('فشل التصدير — حاول مرة أخرى', error: true);
+      _toast('فشل تصدير ملف PDF', error: true);
     } else {
-      AdminService.trackEvent('pdf_export_completed');
-      _toast('تم التصدير بنجاح ✅', success: true);
+      _toast('تم تصدير ملف PDF بنجاح', success: true);
     }
-  }
-
-  /// شيت اختيار صيغة التصدير (Excel / PDF) — يُستدعى من كل نقاط الدخول
-  /// السابقة التي كانت تستدعي _exportExcel() مباشرة، لإتاحة PDF كصيغة
-  /// موازية دون إضافة أزرار جديدة تُثقل الواجهة.
-  void _showExportOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.textSecondary.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Text(
-                'اختر صيغة التصدير',
-                style: GoogleFonts.cairo(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.table_chart_rounded,
-                    color: AppColors.success),
-                title: Text('تصدير Excel', style: GoogleFonts.cairo()),
-                subtitle: Text(
-                  'ملف قابل للتحرير مطابق للنموذج الرسمي',
-                  style: GoogleFonts.cairo(
-                      fontSize: 12, color: AppColors.textSecondary),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _exportExcel();
-                },
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.picture_as_pdf_rounded, color: Colors.red),
-                title: Text('تصدير PDF', style: GoogleFonts.cairo()),
-                subtitle: Text(
-                  'جاهز للطباعة والمشاركة على جميع الأجهزة',
-                  style: GoogleFonts.cairo(
-                      fontSize: 12, color: AppColors.textSecondary),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _exportPdf();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _showStats() {
@@ -1085,6 +1006,7 @@ class _GradingScreenState extends State<GradingScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (_) => _StatsSheet(stats: stats),
     );
   }
@@ -1101,171 +1023,22 @@ class _GradingScreenState extends State<GradingScreen> {
   // =================== UI ===================
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final grading = context.watch<GradingProvider>();
     final cur = grading.currentStudent;
     final total = grading.students.length;
     final idx = grading.currentIndex;
-
-    // فرض السقف الإداري: إذا عطّل المطور "الوضع الأوفلاين" من إعدادات
-    // النظام، لا يُسمح بمتابعة الرصد بدون اتصال إنترنت فعلي (باستثناء
-    // العرض التجريبي الذي لا يعتمد أصلاً على مزامنة حقيقية، وباستثناء
-    // حالة انتهاء القائمة "cur == null" حيث لا يوجد رصد جديد ليُمنع أصلاً
-    // وكل البيانات محفوظة بالفعل بانتظار المزامنة التلقائية).
-    final blockedByOfflinePolicy = !_offlineModeAllowedBySystem &&
-        !grading.isOnline &&
-        widget.classId != 0 &&
-        cur != null;
-    if (blockedByOfflinePolicy) {
-      // إيقاف أي تسجيل/استماع صوتي نشط فوراً لمنع تسريب استخدام الميكروفون
-      // في الخلفية دون علم المستخدم أو تحكمه (مثال: انقطع الاتصال أثناء
-      // التسجيل الصوتي المستمر).
-      if (_autoLoopActive ||
-          voiceService.isListening ||
-          voiceService.isRecording) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _stopAutoLoop(silent: true);
-        });
-      }
-      return _buildOfflineBlockedScreen();
+    if (_lastObservedStudentIndex != idx) {
+      _lastObservedStudentIndex = idx;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _resetFieldFocus(toFirstEmpty: true));
+      });
     }
 
     if (cur == null) {
-      // حالة: انتهت قائمة الطلاب بالكامل (بعد آخر طالب)
       return Scaffold(
-        backgroundColor: AppColors.background,
-        body: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
-                decoration: const BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(22)),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_forward_rounded,
-                          color: Colors.white),
-                    ),
-                    Expanded(
-                      child: Text(
-                        widget.className,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.cairo(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 48),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.celebration_rounded,
-                            size: 62,
-                            color: AppColors.success,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Text(
-                          'أحسنت العمل رائعاً! مبروك عليك',
-                          style: GoogleFonts.cairo(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.success,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'تم الانتهاء من جميع طلاب\n${widget.className} • ${widget.subject}',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.cairo(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                            height: 1.6,
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _openDashboard,
-                                icon: const Icon(Icons.analytics_rounded,
-                                    size: 18),
-                                label: Text(
-                                  'عرض التحليلات',
-                                  style: GoogleFonts.cairo(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: const BorderSide(
-                                      color: AppColors.primary),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 13),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _showExportOptions,
-                                icon: const Icon(Icons.ios_share_rounded,
-                                    size: 18),
-                                label: Text(
-                                  'تصدير الكشف',
-                                  style: GoogleFonts.cairo(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.success,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 13),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextButton.icon(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.home_rounded, size: 18),
-                          label: Text(
-                            'العودة للصفحة الرئيسية',
-                            style: GoogleFonts.cairo(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        appBar: AppBar(title: Text(widget.className)),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -1354,22 +1127,30 @@ class _GradingScreenState extends State<GradingScreen> {
                 icon: const Icon(Icons.help_outline, color: Colors.white),
               ),
               IconButton(
-                onPressed: _openDashboard,
-                tooltip: 'لوحة التحليلات',
-                icon: const Icon(
-                  Icons.analytics_rounded,
-                  color: Colors.white,
-                ),
-              ),
-              IconButton(
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => StudentsListScreen(
+                    builder: (_) => DashboardScreen(
                       className: widget.className,
                       subject: widget.subject,
                     ),
                   ),
                 ),
+                tooltip: 'لوحة التحليلات',
+                icon: const Icon(Icons.analytics_rounded, color: Colors.white),
+              ),
+              IconButton(
+                onPressed: () async {
+                  final selected = await Navigator.of(context).push<int>(
+                    MaterialPageRoute(
+                      builder: (_) => StudentsListScreen(
+                        className: widget.className,
+                        subject: widget.subject,
+                      ),
+                    ),
+                  );
+                  if (!mounted || selected == null) return;
+                  setState(() => _resetFieldFocus(toFirstEmpty: true));
+                },
                 tooltip: 'قائمة الطلاب',
                 icon: const Icon(Icons.list_alt_rounded, color: Colors.white),
               ),
@@ -1439,99 +1220,17 @@ class _GradingScreenState extends State<GradingScreen> {
     );
   }
 
-  /// شاشة تُعرض عندما يكون الجهاز أوفلاين والمطور قد عطّل "الوضع
-  /// الأوفلاين" من إعدادات النظام — تمنع الاستمرار في الرصد دون اتصال
-  /// حقيقي بدلاً من ترك الإعداد شكلياً بلا أي تأثير فعلي.
-  Widget _buildOfflineBlockedScreen() {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.wifi_off_rounded,
-                    size: 50,
-                    color: AppColors.error,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Text(
-                  'الوضع الأوفلاين غير متاح حالياً',
-                  style: GoogleFonts.cairo(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'قام المطور بتعطيل العمل بدون إنترنت مؤقتاً.\n'
-                  'يرجى الاتصال بالإنترنت والمحاولة مرة أخرى.',
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    height: 1.7,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 26),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    // إعادة تحميل السياسة الإدارية أيضاً وليس فقط حالة
-                    // الاتصال، حتى تنعكس فوراً أي تعديلات يجريها المطور
-                    // على إعدادات النظام أثناء بقاء المستخدم في هذه الشاشة.
-                    await _loadSystemFeatureFlags();
-                    if (mounted) setState(() {});
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text(
-                    'إعادة المحاولة',
-                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                  label: Text('العودة', style: GoogleFonts.cairo()),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStudentCard(dynamic student, GradingProvider g) {
+  Widget _buildStudentCard(Student student, GradingProvider g) {
     final totalPossible = g.fields.fold<double>(0, (s, f) => s + f.max);
+    final studentTotal = student.totalFor(g.fields);
     final percent = totalPossible > 0
-        ? (student.total / totalPossible).clamp(0.0, 1.0)
+        ? (studentTotal / totalPossible).clamp(0.0, 1.0)
         : 0.0;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1595,7 +1294,7 @@ class _GradingScreenState extends State<GradingScreen> {
               Expanded(
                 child: _miniStat(
                   'المجموع',
-                  '${_fmt(student.total)} / ${_fmt(totalPossible)}',
+                  '${_fmt(studentTotal)} / ${_fmt(totalPossible)}',
                   AppColors.primary,
                 ),
               ),
@@ -1611,7 +1310,7 @@ class _GradingScreenState extends State<GradingScreen> {
               Expanded(
                 child: _miniStat(
                   'البنود المسجلة',
-                  '${student.grades.length} / ${g.fields.length}',
+                  '${student.completedFieldCount(g.fields)} / ${g.fields.length}',
                   AppColors.info,
                 ),
               ),
@@ -1658,17 +1357,25 @@ class _GradingScreenState extends State<GradingScreen> {
   }
 
   Widget _buildVoiceArea(GradingProvider grading) {
+    final subscription = context.watch<AuthProvider>().user?.subscription;
+    final canUseServerTranscription =
+        subscription?.canUseServerTranscription ?? false;
     final isActive =
         voiceService.isListening || voiceService.isRecording || _autoLoopActive;
     final allFilled = _currentFieldIndex >= grading.fields.length;
     final currentField = (!allFilled && _currentFieldIndex >= 0)
         ? grading.fields[_currentFieldIndex]
         : null;
+    final localSpeechUnavailable =
+        (_smartMode || !_useServerTranscription) &&
+        _speechChecked &&
+        !_speechAvailable &&
+        !isActive;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1683,10 +1390,7 @@ class _GradingScreenState extends State<GradingScreen> {
           if (_smartMode && currentField != null)
             Container(
               margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.symmetric(
-                vertical: 10,
-                horizontal: 14,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
                 gradient: AppColors.primaryGradient,
                 borderRadius: BorderRadius.circular(14),
@@ -1716,10 +1420,7 @@ class _GradingScreenState extends State<GradingScreen> {
           if (_smartMode && currentField == null && grading.fields.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.symmetric(
-                vertical: 10,
-                horizontal: 14,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
                 color: AppColors.success.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
@@ -1751,25 +1452,32 @@ class _GradingScreenState extends State<GradingScreen> {
             isRecording: isActive,
             isPaused: false,
             isProcessing: _isProcessing,
+            isEnabled: !localSpeechUnavailable,
+            disabledLabel: 'التعرف الصوتي غير متاح على هذا الجهاز',
             onPressed: _toggleRecord,
           ),
           const SizedBox(height: 12),
           Text(
             _isProcessing
                 ? 'جاري معالجة الصوت...'
+                : localSpeechUnavailable
+                ? 'التعرف الصوتي غير متاح على هذا الجهاز؛ يمكنك إدخال الدرجات يدوياً'
                 : isActive
-                    ? (_smartMode
-                        ? '🎤 الوضع التلقائي يعمل... قل الدرجة'
-                        : 'استمع... قل الدرجات بالعربية 🎤')
-                    : (_smartMode
-                        ? 'اضغط لبدء الرصد التلقائي السريع'
-                        : 'اضغط للبدء بالتسجيل الصوتي'),
+                ? (_smartMode
+                      ? '🎤 الوضع التلقائي يعمل... قل الدرجة'
+                      : 'استمع... قل الدرجات بالعربية 🎤')
+                : (_smartMode
+                      ? 'اضغط لبدء الرصد التلقائي السريع'
+                      : 'اضغط للبدء بالتسجيل الصوتي'),
             textAlign: TextAlign.center,
             style: GoogleFonts.cairo(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color:
-                  isActive ? AppColors.recordingActive : AppColors.textPrimary,
+              color: isActive
+                  ? AppColors.recordingActive
+                  : localSpeechUnavailable
+                  ? AppColors.error
+                  : AppColors.textPrimary,
             ),
           ),
           if (_transcript.isNotEmpty) ...[
@@ -1805,7 +1513,6 @@ class _GradingScreenState extends State<GradingScreen> {
                   value: _smartMode,
                   onChanged: (v) async {
                     if (_autoLoopActive) await _stopAutoLoop(silent: true);
-                    if (!mounted) return;
                     setState(() => _smartMode = v);
                   },
                   activeThumbColor: AppColors.success,
@@ -1834,20 +1541,30 @@ class _GradingScreenState extends State<GradingScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Switch(
-                  value:
-                      _useServerTranscription && _serverSpeechAllowedBySystem,
-                  onChanged: !_serverSpeechAllowedBySystem
-                      ? null
-                      : (v) => setState(() => _useServerTranscription = v),
+                  value: _useServerTranscription && canUseServerTranscription,
+                  onChanged: (v) async {
+                    if (v && !canUseServerTranscription) {
+                      _toast(
+                        subscription?.blockedMessage('Whisper AI') ??
+                            'يلزم تسجيل الدخول لاستخدام Whisper AI',
+                        error: true,
+                      );
+                      return;
+                    }
+                    await StorageService.setSetting('use_server_speech', v);
+                    if (mounted) {
+                      setState(() => _useServerTranscription = v);
+                    }
+                  },
                   activeThumbColor: AppColors.primary,
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  !_serverSpeechAllowedBySystem
-                      ? 'السيرفر معطّل حالياً من قِبل المطور'
+                  !canUseServerTranscription
+                      ? 'Whisper AI غير متاح في خطة الاشتراك'
                       : _useServerTranscription
-                          ? 'تحويل عبر السيرفر (Whisper AI)'
-                          : 'تحويل على الجهاز (سريع)',
+                      ? 'تحويل عبر السيرفر (Whisper AI)'
+                      : 'تحويل على الجهاز (سريع)',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -1865,7 +1582,7 @@ class _GradingScreenState extends State<GradingScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1921,6 +1638,7 @@ class _GradingScreenState extends State<GradingScreen> {
                 });
               },
               child: GradeFieldCard(
+                key: ValueKey('grade-${student.id}-${f.name}'),
                 field: f,
                 value: student.grades[f.name],
                 isHighlighted: isCurrent || isJustFilled,
@@ -1948,7 +1666,7 @@ class _GradingScreenState extends State<GradingScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -1981,10 +1699,17 @@ class _GradingScreenState extends State<GradingScreen> {
             ),
             const SizedBox(width: 6),
             _circleBtn(
-              icon: Icons.ios_share_rounded,
-              tooltip: 'تصدير الكشف',
-              onTap: _showExportOptions,
+              icon: Icons.table_chart_rounded,
+              tooltip: 'تصدير Excel',
+              onTap: _exportExcel,
               color: AppColors.success,
+            ),
+            const SizedBox(width: 6),
+            _circleBtn(
+              icon: Icons.picture_as_pdf_rounded,
+              tooltip: 'تصدير PDF',
+              onTap: _exportPdf,
+              color: AppColors.error,
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -2070,99 +1795,116 @@ class _GradingScreenState extends State<GradingScreen> {
 
 enum _SmartAction { none, assigned, next, previous, cleared, absent, stop }
 
+enum _AdvanceResult { advanced, completed, blocked }
+
 class _StatsSheet extends StatelessWidget {
   final ClassStats stats;
   const _StatsSheet({required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(4),
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.bar_chart_rounded,
+                        color: AppColors.info,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'إحصائيات الفصل',
+                      style: GoogleFonts.cairo(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                GridView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.7,
+                  ),
+                  children: [
+                    _statBox(
+                      'عدد الطلاب',
+                      '${stats.totalStudents}',
+                      Icons.people_outline,
+                      AppColors.primary,
+                    ),
+                    _statBox(
+                      'المتوسط',
+                      stats.averageScore.toStringAsFixed(1),
+                      Icons.trending_up,
+                      AppColors.info,
+                    ),
+                    _statBox(
+                      'نسبة النجاح',
+                      '${stats.successRate.toStringAsFixed(0)}%',
+                      Icons.check_circle_outline,
+                      AppColors.success,
+                    ),
+                    _statBox(
+                      'نسبة الإنجاز',
+                      '${stats.completionPercentage.toStringAsFixed(0)}%',
+                      Icons.task_alt_rounded,
+                      AppColors.warning,
+                    ),
+                    _statBox(
+                      'أعلى درجة',
+                      stats.highestScore.toStringAsFixed(1),
+                      Icons.emoji_events_outlined,
+                      Colors.amber.shade700,
+                    ),
+                    _statBox(
+                      'أقل درجة',
+                      stats.lowestScore.toStringAsFixed(1),
+                      Icons.warning_amber_outlined,
+                      AppColors.error,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.info.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.bar_chart_rounded,
-                  color: AppColors.info,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'إحصائيات الفصل',
-                style: GoogleFonts.cairo(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          GridView(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.7,
-            ),
-            children: [
-              _statBox('عدد الطلاب', '${stats.totalStudents}',
-                  Icons.people_outline, AppColors.primary),
-              _statBox('المتوسط', stats.averageScore.toStringAsFixed(1),
-                  Icons.trending_up, AppColors.info),
-              _statBox(
-                'نسبة النجاح',
-                '${stats.successRate.toStringAsFixed(0)}%',
-                Icons.check_circle_outline,
-                AppColors.success,
-              ),
-              _statBox(
-                'نسبة الإنجاز',
-                '${stats.completionPercentage.toStringAsFixed(0)}%',
-                Icons.task_alt_rounded,
-                AppColors.warning,
-              ),
-              _statBox(
-                'أعلى درجة',
-                stats.highestScore.toStringAsFixed(1),
-                Icons.emoji_events_outlined,
-                Colors.amber.shade700,
-              ),
-              _statBox(
-                'أقل درجة',
-                stats.lowestScore.toStringAsFixed(1),
-                Icons.warning_amber_outlined,
-                AppColors.error,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
@@ -2221,17 +1963,15 @@ class _HelpSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       expand: false,
       builder: (_, ctrl) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: ListView(
           controller: ctrl,
@@ -2302,11 +2042,8 @@ class _HelpSheet extends StatelessWidget {
               AppColors.info,
             ),
             _section(
-              '📊 تصدير Excel / PDF الرسمي',
-              'يقوم التطبيق بتصدير كشف درجات احترافي مطابق لورقة الرصد الرسمية '
-                  'بصيغتين حسب اختيارك:\n'
-                  '• Excel: ملف قابل للتحرير (.xlsx)\n'
-                  '• PDF: جاهز للطباعة والمشاركة الفورية على أي جهاز\n'
+              '📊 تصدير Excel الرسمي',
+              'يقوم التطبيق بتصدير ملف Excel احترافي مطابق لورقة الرصد الرسمية:\n'
                   '• اسم المدرسة، الصف، المادة، المعلم، التاريخ\n'
                   '• حدود ملونة وألوان متناوبة للصفوف\n'
                   '• صف الدرجة العظمى لكل بند\n'

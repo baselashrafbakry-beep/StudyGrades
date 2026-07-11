@@ -1,14 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
-import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/error_handler.dart';
 
-/// شاشة إحصاءات النظام التفصيلية - للمطور والمدير
+/// شاشة إحصاءات النظام التفصيلية - للمطور فقط
 class SystemStatsScreen extends StatefulWidget {
   const SystemStatsScreen({super.key});
 
@@ -19,32 +19,45 @@ class SystemStatsScreen extends StatefulWidget {
 class _SystemStatsScreenState extends State<SystemStatsScreen> {
   Map<String, dynamic> _stats = {};
   List<User> _users = [];
-  Map<String, int> _analyticsCounters = {};
-  String? _analyticsLastUpdated;
-  bool _analyticsEnabled = true;
   bool _loading = true;
+  bool _initialized = false;
+  bool _accessDenied = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    final user = context.read<AuthProvider>().user;
+    if (user?.canViewSystemStats != true) {
+      _accessDenied = true;
+      _loading = false;
+      return;
+    }
     _load();
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    final user = context.read<AuthProvider>().user;
+    if (user?.canViewSystemStats != true) {
+      if (mounted) {
+        setState(() {
+          _accessDenied = true;
+          _loading = false;
+        });
+      }
+      return;
+    }
+    if (!_loading) {
+      setState(() => _loading = true);
+    }
     try {
       final stats = await AdminService.getSystemStats();
       final users = await AdminService.getAllUsers();
-      final analyticsEnabled = await AdminService.isAnalyticsEnabled();
-      final counters = await AdminService.getAnalyticsCounters();
-      final lastUpdated = await AdminService.getAnalyticsLastUpdated();
       if (!mounted) return;
       setState(() {
         _stats = stats;
         _users = users;
-        _analyticsEnabled = analyticsEnabled;
-        _analyticsCounters = counters;
-        _analyticsLastUpdated = lastUpdated;
         _loading = false;
       });
     } catch (e, st) {
@@ -56,8 +69,9 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
+    if (_accessDenied) {
+      return _buildNoAccess();
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -78,14 +92,57 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
                           const SizedBox(height: 16),
                           _buildBarChartSection(),
                           const SizedBox(height: 16),
-                          _buildUsageAnalyticsSection(),
-                          const SizedBox(height: 16),
                           _buildRecentUsers(),
                         ],
                       ),
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoAccess() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 56,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'لا تملك صلاحية عرض إحصاءات النظام',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'هذه الصفحة متاحة لحساب المطور فقط.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -253,17 +310,19 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     void add(int v, Color c, String label) {
       if (v == 0) return;
       final percent = (v / total * 100).toStringAsFixed(0);
-      sections.add(PieChartSectionData(
-        value: v.toDouble(),
-        color: c,
-        title: '$percent%',
-        radius: 60,
-        titleStyle: GoogleFonts.cairo(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+      sections.add(
+        PieChartSectionData(
+          value: v.toDouble(),
+          color: c,
+          title: '$percent%',
+          radius: 60,
+          titleStyle: GoogleFonts.cairo(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
-      ));
+      );
     }
 
     add(dev, const Color(0xFF6A1B9A), 'مطور');
@@ -274,7 +333,7 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -357,14 +416,17 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     final inactive = (_stats['inactive_users'] ?? 0).toDouble();
     final newWeek = (_stats['new_users_week'] ?? 0).toDouble();
     final total = (_stats['total_users'] ?? 0).toDouble();
-    final maxV = [active, inactive, newWeek, total]
-        .reduce((a, b) => a > b ? a : b)
-        .clamp(1.0, double.infinity);
+    final maxV = [
+      active,
+      inactive,
+      newWeek,
+      total,
+    ].reduce((a, b) => a > b ? a : b).clamp(1.0, double.infinity);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -476,7 +538,7 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -494,178 +556,6 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     );
   }
 
-  /// عدّادات استخدام حقيقية (محلية بالكامل، بدون أي اتصال خارجي) —
-  /// تُحسب فقط عندما يكون "تفعيل التحليلات" مفعّلاً من إعدادات النظام.
-  static const Map<String, String> _eventLabelsAr = {
-    'grading_session_started': 'جلسات رصد بدأت',
-    'grade_synced_online': 'درجات تمت مزامنتها فوراً',
-    'grade_saved_locally': 'درجات حُفظت محلياً (أوفلاين)',
-    'excel_export_completed': 'ملفات Excel تم تصديرها',
-  };
-
-  Widget _buildUsageAnalyticsSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.insights_rounded, color: AppColors.warning),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'إحصاءات الاستخدام (محلية)',
-                  style: GoogleFonts.cairo(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              if (!_analyticsEnabled)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.13),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'معطّلة',
-                    style: GoogleFonts.cairo(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.error,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'عدّادات مجهولة الهوية تُحسب على هذا الجهاز فقط — لا تُرسَل '
-            'لأي خادم خارجي. يمكن تعطيلها كلياً من "إعدادات النظام".',
-            style: GoogleFonts.cairo(
-              fontSize: 10,
-              color: AppColors.textSecondary,
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (!_analyticsEnabled)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 16,
-                    color: AppColors.textHint,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'التحليلات معطّلة حالياً — لن يتم تسجيل أي أحداث جديدة',
-                      style: GoogleFonts.cairo(
-                        fontSize: 11,
-                        color: AppColors.textHint,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (_analyticsCounters.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                'لا توجد بيانات استخدام مسجّلة بعد',
-                style: GoogleFonts.cairo(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            )
-          else ...[
-            ..._analyticsCounters.entries.map((e) {
-              final label = _eventLabelsAr[e.key] ?? e.key;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: GoogleFonts.cairo(
-                          fontSize: 12,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withValues(alpha: 0.13),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${e.value}',
-                        style: GoogleFonts.cairo(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.warning,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            if (_analyticsLastUpdated != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'آخر تحديث: ${_formatDate(_analyticsLastUpdated!)}',
-                style: GoogleFonts.cairo(
-                  fontSize: 9,
-                  color: AppColors.textHint,
-                ),
-              ),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(String iso) {
-    try {
-      final d = DateTime.parse(iso);
-      return '${d.year}/${d.month.toString().padLeft(2, '0')}/'
-          '${d.day.toString().padLeft(2, '0')} '
-          '${d.hour.toString().padLeft(2, '0')}:'
-          '${d.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
-    }
-  }
-
   Widget _buildRecentUsers() {
     final recent = List<User>.from(_users);
     recent.sort((a, b) {
@@ -678,7 +568,7 @@ class _SystemStatsScreenState extends State<SystemStatsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(

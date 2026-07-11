@@ -1,27 +1,28 @@
+import 'dart:io' show File;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/student_model.dart';
 import '../services/admin_service.dart';
 import '../services/analytics_service.dart';
 import '../utils/error_handler.dart';
 
-/// خدمة تصدير "كشف رصد الدرجات" الرسمي بصيغة PDF — نسخة موازية ومكمّلة
-/// لتصدير Excel (AnalyticsService.exportToExcel)، وتعمل على *جميع* المنصات
-/// بما فيها الويب (بعكس Excel الذي يتطلب dart:io على الأجهزة المحمولة
-/// ويتحول تلقائياً إلى CSV على الويب).
+/// خدمة تصدير "كشف رصد الدرجات" الرسمي بصيغة PDF، كمسار مواز ومكمل
+/// لتصدير Excel (AnalyticsService.exportToExcel).
 ///
-/// لماذا حزمتا `pdf` + `printing`؟
+/// لماذا حزمتا `pdf` + `share_plus`؟
 ///   - `pdf`: بناء المستند (صفحات/جداول/خطوط/ألوان) بشكل مستقل عن المنصة
 ///     بالكامل (pure-Dart)، فهو يعمل فعلياً على Web/Android/iOS/Desktop
 ///     دون أي فرع خاص بالمنصة.
-///   - `printing`: طبقة الحفظ/المشاركة/الطباعة الجاهزة عبر المنصات —
-///     توفر `Printing.sharePdf()` الذي يعمل على الموبايل (مشاركة عبر
-///     share sheet) والويب (تنزيل الملف مباشرة في المتصفح) بنفس الاستدعاء
-///     دون فرع `if (kIsWeb)` يدوي، على عكس excel/share_plus التي تطلبت
-///     ذلك التفريع صراحةً.
+///   - `share_plus`: طبقة مشاركة الملفات المعتمدة في التطبيق حالياً؛ على
+///     Android/iOS/Desktop تتم مشاركة ملف PDF مؤقت، وعلى الويب تُستخدم
+///     `XFile.fromData` عند توفر هدف بناء ويب يدعم بقية تبعيات التطبيق.
 ///
 /// دعم اللغة العربية (RTL + Cairo font):
 ///   - يُحمَّل الخطان Cairo-Regular / Cairo-Bold من `assets/fonts/` (نفس
@@ -39,8 +40,9 @@ class PdfExportService {
   static Future<void> _ensureFontsLoaded() async {
     if (_regularFont != null && _boldFont != null) return;
     try {
-      final regularData =
-          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final regularData = await rootBundle.load(
+        'assets/fonts/Cairo-Regular.ttf',
+      );
       final boldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
       _regularFont = pw.Font.ttf(regularData);
       _boldFont = pw.Font.ttf(boldData);
@@ -67,8 +69,7 @@ class PdfExportService {
     return v.toStringAsFixed(2);
   }
 
-  /// يبني ملف PDF كامل لكشف رصد الدرجات ثم يعرضه للمستخدم عبر
-  /// `Printing.sharePdf()` (مشاركة على الموبايل، تنزيل مباشر على الويب).
+  /// يبني ملف PDF كامل لكشف رصد الدرجات ثم يعرضه للمستخدم عبر `share_plus`.
   ///
   /// يُعيد `true` عند النجاح و`false` عند أي خطأ (مع تسجيله في
   /// [ErrorHandler] كما هو معمول به في بقية طرق التصدير).
@@ -89,7 +90,8 @@ class PdfExportService {
       final totalPossible = fields.fold<double>(0, (s, f) => s + f.max);
       final stats = AnalyticsService.calculate(students, fields);
       final now = DateTime.now();
-      final dateStr = '${now.year}/${now.month.toString().padLeft(2, '0')}/'
+      final dateStr =
+          '${now.year}/${now.month.toString().padLeft(2, '0')}/'
           '${now.day.toString().padLeft(2, '0')}';
 
       const primaryColor = PdfColor.fromInt(0xFF1F4E78);
@@ -145,13 +147,12 @@ class PdfExportService {
         double size = 10,
         PdfColor color = PdfColors.black,
         bool isBold = false,
-      }) =>
-          pw.TextStyle(
-            font: isBold ? bold : regular,
-            fontSize: size,
-            color: color,
-            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-          );
+      }) => pw.TextStyle(
+        font: isBold ? bold : regular,
+        fontSize: size,
+        color: color,
+        fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      );
 
       // نُقسّم الطلاب إلى صفحات (Chunks) لتفادي فيضان الذاكرة/الأداء مع
       // فصول كبيرة جداً — MultiPage من حزمة pdf تتكفل أصلاً بتقسيم الجدول
@@ -182,8 +183,11 @@ class PdfExportService {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     schoolName ?? 'كشف رصد الدرجات الرسمي',
-                    style:
-                        style(size: 18, isBold: true, color: PdfColors.white),
+                    style: style(
+                      size: 18,
+                      isBold: true,
+                      color: PdfColors.white,
+                    ),
                     textDirection: pw.TextDirection.rtl,
                   ),
                 ),
@@ -193,8 +197,11 @@ class PdfExportService {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     '${AdminService.appName} - ${AdminService.appNameAr}',
-                    style:
-                        style(size: 11, isBold: true, color: PdfColors.white),
+                    style: style(
+                      size: 11,
+                      isBold: true,
+                      color: PdfColors.white,
+                    ),
                     textDirection: pw.TextDirection.rtl,
                   ),
                 ),
@@ -292,30 +299,62 @@ class PdfExportService {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _statBox('عدد الطلاب', '${stats.totalStudents}', style, statsBg,
-                    statsFg),
-                _statBox('الطلاب المرصودون', '${stats.completedStudents}',
-                    style, statsBg, statsFg),
                 _statBox(
-                    'نسبة الإنجاز',
-                    '${stats.completionPercentage.toStringAsFixed(1)}%',
-                    style,
-                    statsBg,
-                    statsFg),
-                _statBox('المتوسط العام', _fmt(stats.averageScore), style,
-                    statsBg, statsFg),
+                  'عدد الطلاب',
+                  '${stats.totalStudents}',
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
                 _statBox(
-                    'نسبة النجاح',
-                    '${stats.successRate.toStringAsFixed(1)}%',
-                    style,
-                    statsBg,
-                    statsFg),
-                _statBox('أعلى درجة', _fmt(stats.highestScore), style, statsBg,
-                    statsFg),
-                _statBox('أقل درجة', _fmt(stats.lowestScore), style, statsBg,
-                    statsFg),
-                _statBox('الدرجة الكلية', _fmt(stats.totalPossible), style,
-                    statsBg, statsFg),
+                  'الطلاب المرصودون',
+                  '${stats.completedStudents}',
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'نسبة الإنجاز',
+                  '${stats.completionPercentage.toStringAsFixed(1)}%',
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'المتوسط العام',
+                  _fmt(stats.averageScore),
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'نسبة النجاح',
+                  '${stats.successRate.toStringAsFixed(1)}%',
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'أعلى درجة',
+                  _fmt(stats.highestScore),
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'أقل درجة',
+                  _fmt(stats.lowestScore),
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
+                _statBox(
+                  'الدرجة الكلية',
+                  _fmt(stats.totalPossible),
+                  style,
+                  statsBg,
+                  statsFg,
+                ),
               ],
             ),
             pw.SizedBox(height: 30),
@@ -336,14 +375,39 @@ class PdfExportService {
           'كشف_درجات_${_safeName(className)}_${_safeName(subject)}_'
           '${DateTime.now().millisecondsSinceEpoch}.pdf';
 
-      // Printing.sharePdf يعمل بشكل موحّد عبر جميع المنصات: على الموبايل
-      // يفتح قائمة المشاركة (Share Sheet)، وعلى الويب يُنزِّل الملف مباشرة
-      // في المتصفح — بدون أي فرع `if (kIsWeb)` يدوي (بعكس Excel/CSV).
-      await Printing.sharePdf(bytes: bytes, filename: fileName);
+      if (kIsWeb) {
+        await Share.shareXFiles(
+          [XFile.fromData(bytes, name: fileName, mimeType: 'application/pdf')],
+          subject: 'كشف درجات $className - $subject',
+          fileNameOverrides: [fileName],
+        );
+        return true;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File(p.join(dir.path, fileName));
+      await file.writeAsBytes(bytes, flush: true);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: 'كشف درجات $className - $subject',
+        text: 'تم تصدير كشف الدرجات من تطبيق StudyGrades',
+      );
+      await _deleteFileQuietly(file);
       return true;
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'PdfExportService.exportToPdf');
       return false;
+    }
+  }
+
+  static Future<void> _deleteFileQuietly(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Temporary export cleanup is best-effort.
     }
   }
 
@@ -365,9 +429,10 @@ class PdfExportService {
             pw.Text(
               label,
               style: style(
-                  size: 9,
-                  isBold: true,
-                  color: const PdfColor.fromInt(0xFF1F4E78)),
+                size: 9,
+                isBold: true,
+                color: const PdfColor.fromInt(0xFF1F4E78),
+              ),
               textDirection: pw.TextDirection.rtl,
             ),
             pw.SizedBox(height: 2),

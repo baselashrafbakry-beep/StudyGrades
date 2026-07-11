@@ -1,0 +1,26 @@
+{
+  "name": "studygrades-commercial-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check netlify/functions/api.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "10.7.9"
+  },
+  "overrides": {
+    "@netlify/otel": {
+      "@opentelemetry/core": "2.9.0",
+      "@opentelemetry/resources": "2.9.0",
+      "@opentelemetry/sdk-trace-node": "2.9.0"
+    }
+  },
+  "devDependencies": {
+    "@netlify/functions": "5.3.0"
+  }
+}

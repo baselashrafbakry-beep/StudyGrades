@@ -45,9 +45,9 @@ void main() {
       expect(r.numbers[0], closeTo(9.333, 0.001));
     });
 
-    test('ثلاثة أرباع بدون رقم سابق => تُهمَل (لا تُسجَّل كـ 3 خطأً)', () {
+    test('ثلاثة أرباع بدون رقم سابق => درجة كسرية مستقلة', () {
       final r = NLPParser.parse('ثلاثه ارباع');
-      expect(r.numbers, isEmpty);
+      expect(r.numbers, [0.75]);
     });
 
     test('كسر بعد رقم يحتوي على كسر بالفعل => يُتجاهل (منع تراكم مزدوج)', () {
@@ -135,9 +135,9 @@ void main() {
       expect(r.hasClear, false);
     });
 
-    test('نص وحدها بدون رقم سابق => تُهمَل تماماً (لا تُحدث خطأ)', () {
+    test('نص وحدها بدون رقم سابق => درجة نصف مستقلة', () {
       final r = NLPParser.parse('نص');
-      expect(r.numbers, isEmpty);
+      expect(r.numbers, [0.5]);
     });
   });
 }

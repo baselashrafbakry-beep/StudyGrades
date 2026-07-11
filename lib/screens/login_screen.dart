@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
-import '../services/admin_service.dart';
-import '../providers/theme_provider.dart';
+import '../services/api_client.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
-import 'change_password_screen.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -26,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _rememberMe = false;
+  bool _validationEnabled = false;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -39,17 +37,11 @@ class _LoginScreenState extends State<LoginScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeIn,
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.15),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOutCubic,
-    ));
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+        );
     _animController.forward();
     _loadRememberedUser();
   }
@@ -57,9 +49,9 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _loadRememberedUser() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
       final saved = prefs.getString(_rememberKey);
       if (saved != null && saved.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           _userCtrl.text = saved;
           _rememberMe = true;
@@ -91,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // تقييم قوة كلمة المرور (0-4)
+  /// تقييم قوة كلمة المرور (0-4)
   int _passwordStrength(String pwd) {
     if (pwd.isEmpty) return 0;
     int score = 0;
@@ -107,6 +99,8 @@ class _LoginScreenState extends State<LoginScreen>
 
   String _strengthLabel(int s) {
     switch (s) {
+      case 0:
+        return '';
       case 1:
         return 'ضعيفة جداً';
       case 2:
@@ -135,146 +129,81 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  /// تحويل رسالة خطأ API إلى نص عربي مفهوم للمستخدم
-  String _humanizeError(String rawError) {
-    final e = rawError.toLowerCase();
-    if (e.contains('connection') ||
-        e.contains('timeout') ||
-        e.contains('network') ||
-        e.contains('connectederror')) {
-      return 'تعذر الاتصال بالسيرفر\nتحقق من الإنترنت أو جرّب الوضع التجريبي';
-    }
-    if (e.contains('401') ||
-        e.contains('unauthorized') ||
-        e.contains('بيانات الدخول') ||
-        e.contains('غير صحيحة')) {
-      return 'اسم المستخدم أو كلمة المرور غير صحيحة';
-    }
-    if (e.contains('403') || e.contains('forbidden')) {
-      return 'ليس لديك صلاحية الدخول، تواصل مع المدير';
-    }
-    if (e.contains('500') || e.contains('server error')) {
-      return 'خطأ في السيرفر، حاول مرة أخرى لاحقاً';
-    }
-    if (e.contains('انتهت مهلة') || e.contains('مهلة')) {
-      return 'انتهت مهلة الاتصال\nالسيرفر بطيء، حاول مرة أخرى';
-    }
-    if (e.contains('no address associated') || e.contains('socketexception')) {
-      return 'لا يوجد اتصال بالإنترنت\nيمكنك استخدام الوضع التجريبي';
-    }
-    // إن لم تطابق أي حالة، أعد رسالة مبسطة
-    if (rawError.length > 80) {
-      return 'فشل تسجيل الدخول — تحقق من البيانات أو الاتصال';
-    }
-    return rawError;
-  }
-
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
+    if (auth.isLoading) return;
+    if (!_validationEnabled) {
+      setState(() => _validationEnabled = true);
+    }
+    if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     await _saveRememberedUser();
     final ok = await auth.login(_userCtrl.text.trim(), _passCtrl.text);
     if (!mounted) return;
     if (ok) {
-      // 🔒 فحص علم "يجب تغيير كلمة المرور" — يُجبر المطوّر (أو أي حساب
-      // آخر يحمل هذا العلم) على تعيين كلمة مرور جديدة قبل المتابعة إذا
-      // كان لا يزال يستخدم كلمة المرور الافتراضية المكتوبة في الكود
-      // المصدري. راجع AdminService.initDefaultDeveloper() لمزيد من السياق.
-      final currentUser = auth.user;
-      final mustChange = currentUser != null &&
-          await AdminService.getMustChangePassword(currentUser.id);
-      if (!mounted) return;
-      if (mustChange) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const ChangePasswordScreen(isForced: true),
-          ),
-        );
-        return;
-      }
       Fluttertoast.showToast(
-        msg: 'مرحباً ${_userCtrl.text.trim()}! تم تسجيل الدخول بنجاح ✅',
+        msg: 'مرحباً بك! تم تسجيل الدخول بنجاح',
         backgroundColor: AppColors.success,
+        textColor: Colors.white,
+      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+    } else {
+      final message = _formatLoginError(auth.error);
+      Fluttertoast.showToast(
+        msg: message,
+        backgroundColor: AppColors.error,
         textColor: Colors.white,
         toastLength: Toast.LENGTH_LONG,
       );
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    } else {
-      // إظهار خطأ مفهوم بدلاً من رسالة تقنية
-      final raw = auth.error ?? 'فشل تسجيل الدخول';
-      final friendly = _humanizeError(raw);
-      _showErrorDialog(friendly);
     }
   }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.error_outline_rounded,
-                  color: AppColors.error, size: 22),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'تعذر تسجيل الدخول',
-              style: GoogleFonts.cairo(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: AppColors.error,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 10),
-            Text(
-              message,
-              style: GoogleFonts.cairo(
-                fontSize: 14,
-                color: AppColors.textPrimary,
-                height: 1.6,
-              ),
-              textAlign: TextAlign.right,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'حاول مرة أخرى',
-              style: GoogleFonts.cairo(
-                color: AppColors.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  void _clearAuthErrorOnEdit() {
+    final auth = context.read<AuthProvider>();
+    if (auth.error != null) {
+      auth.clearError();
+    }
+  }
+
+  String _formatLoginError(String? rawError) {
+    const fallback =
+        'تعذر تسجيل الدخول. تأكد من اسم المستخدم وكلمة المرور والاتصال بالإنترنت ثم حاول مرة أخرى.';
+    var message = rawError?.trim() ?? '';
+    if (message.isEmpty) return fallback;
+
+    message = message
+        .replaceFirst(RegExp(r'^(Exception|NetworkAuthException):\s*'), '')
+        .replaceFirst(RegExp(r'^DioException\s*\[[^\]]+\]:\s*'), '')
+        .replaceFirst(RegExp(r'^DioException:\s*'), '')
+        .trim();
+
+    final lower = message.toLowerCase();
+    if (lower.contains('authentication deadline') ||
+        lower.contains('timeout') ||
+        lower.contains('timed out')) {
+      return 'استغرقت محاولة تسجيل الدخول وقتاً أطول من المتوقع. تحقق من الإنترنت ثم حاول مرة أخرى.';
+    }
+    if (lower.contains('connection') ||
+        lower.contains('network') ||
+        lower.contains('socket') ||
+        lower.contains('offline') ||
+        message.contains('الاتصال')) {
+      return 'تعذر الاتصال بخدمة تسجيل الدخول. تحقق من الإنترنت ثم حاول مرة أخرى.';
+    }
+    if (lower.contains('unauthorized') ||
+        lower.contains('invalid') ||
+        message.contains('401') ||
+        message.contains('400')) {
+      return 'اسم المستخدم أو كلمة المرور غير صحيحة.';
+    }
+
+    return message;
   }
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final pwdStrength = _passwordStrength(_passCtrl.text);
 
@@ -296,6 +225,9 @@ class _LoginScreenState extends State<LoginScreen>
                 position: _slideAnim,
                 child: Form(
                   key: _formKey,
+                  autovalidateMode: _validationEnabled
+                      ? AutovalidateMode.onUserInteraction
+                      : AutovalidateMode.disabled,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -303,23 +235,24 @@ class _LoginScreenState extends State<LoginScreen>
                       _buildLogo(),
                       const SizedBox(height: 24),
                       Text(
-                        AdminService.appName,
+                        'StudyGrades 2026',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.cairo(
-                          fontSize: 26,
+                          fontSize: 28,
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
                         ),
                       ),
+                      const SizedBox(height: 6),
                       Text(
-                        AdminService.appNameAr,
+                        'سجل دخولك لبدء رصد الدرجات صوتياً',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.cairo(
-                          fontSize: 13,
+                          fontSize: 14,
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 36),
                       _buildUserField(),
                       const SizedBox(height: 16),
                       _buildPasswordField(),
@@ -331,10 +264,22 @@ class _LoginScreenState extends State<LoginScreen>
                       _buildRememberRow(),
                       const SizedBox(height: 24),
                       _buildLoginButton(auth),
-                      const SizedBox(height: 20),
-                      _buildServerInfo(),
+                      if (auth.error != null && !auth.isLoading) ...[
+                        const SizedBox(height: 12),
+                        _buildLoginError(auth.error),
+                      ],
                       const SizedBox(height: 24),
-                      _buildFooter(),
+                      _buildServerInfo(),
+                      const SizedBox(height: 30),
+                      Center(
+                        child: Text(
+                          '© 2026 StudyGrades — للمعلم باسل أشرف',
+                          style: GoogleFonts.cairo(
+                            fontSize: 11,
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -354,35 +299,21 @@ class _LoginScreenState extends State<LoginScreen>
         curve: Curves.elasticOut,
         builder: (ctx, scale, child) =>
             Transform.scale(scale: scale, child: child),
-        child: Hero(
-          tag: 'appLogo',
-          child: Container(
-            width: 110,
-            height: 110,
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: Image.asset(
-                'assets/icons/app_icon.png',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.mic_rounded,
-                  size: 64,
-                  color: Colors.white,
-                ),
+        child: Container(
+          width: 110,
+          height: 110,
+          decoration: BoxDecoration(
+            gradient: AppColors.primaryGradient,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
-            ),
+            ],
           ),
+          child: const Icon(Icons.mic_rounded, size: 64, color: Colors.white),
         ),
       ),
     );
@@ -400,6 +331,12 @@ class _LoginScreenState extends State<LoginScreen>
         labelStyle: GoogleFonts.cairo(),
         hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
       ),
+      onChanged: (_) {
+        _clearAuthErrorOnEdit();
+        if (_validationEnabled) {
+          setState(() {});
+        }
+      },
       validator: (v) =>
           (v == null || v.trim().isEmpty) ? 'الرجاء إدخال اسم المستخدم' : null,
       textInputAction: TextInputAction.next,
@@ -412,7 +349,10 @@ class _LoginScreenState extends State<LoginScreen>
       obscureText: _obscure,
       textDirection: TextDirection.ltr,
       style: GoogleFonts.cairo(),
-      onChanged: (_) => setState(() {}),
+      onChanged: (_) {
+        _clearAuthErrorOnEdit();
+        setState(() {});
+      },
       decoration: InputDecoration(
         labelText: 'كلمة المرور',
         hintText: 'أدخل كلمة المرور',
@@ -423,12 +363,12 @@ class _LoginScreenState extends State<LoginScreen>
             color: AppColors.textSecondary,
           ),
           onPressed: () => setState(() => _obscure = !_obscure),
-          tooltip: _obscure ? 'إظهار' : 'إخفاء',
         ),
         labelStyle: GoogleFonts.cairo(),
         hintStyle: GoogleFonts.cairo(color: AppColors.textHint),
       ),
-      validator: (v) => (v == null || v.isEmpty) ? 'أدخل كلمة المرور' : null,
+      validator: (v) =>
+          (v == null || v.trim().isEmpty) ? 'أدخل كلمة المرور' : null,
       onFieldSubmitted: (_) => _handleLogin(),
     );
   }
@@ -469,32 +409,31 @@ class _LoginScreenState extends State<LoginScreen>
         InkWell(
           onTap: () => setState(() => _rememberMe = !_rememberMe),
           borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
                     value: _rememberMe,
                     activeColor: AppColors.primary,
                     onChanged: (v) => setState(() => _rememberMe = v ?? false),
                     visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'تذكرني',
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  Text(
+                    'تذكرني',
+                    style: GoogleFonts.cairo(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -502,8 +441,8 @@ class _LoginScreenState extends State<LoginScreen>
           onPressed: _showHelpDialog,
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            minimumSize: const Size(48, 48),
+            tapTargetSize: MaterialTapTargetSize.padded,
           ),
           child: Text(
             'هل تحتاج مساعدة؟',
@@ -558,6 +497,43 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  Widget _buildLoginError(String? rawError) {
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.error.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.error,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _formatLoginError(rawError),
+                textDirection: TextDirection.rtl,
+                style: GoogleFonts.cairo(
+                  fontSize: 12,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildServerInfo() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -568,15 +544,18 @@ class _LoginScreenState extends State<LoginScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_done_outlined,
-              color: AppColors.primary, size: 20),
+          const Icon(
+            Icons.cloud_done_outlined,
+            color: AppColors.primary,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'السيرفر الرسمي',
+                  'سيرفر تسجيل الدخول الآمن',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -584,7 +563,7 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 Text(
-                  AdminService.serverUrl,
+                  Uri.parse(ApiClient.baseUrl).host,
                   style: GoogleFonts.cairo(
                     fontSize: 11,
                     color: AppColors.textSecondary,
@@ -593,59 +572,8 @@ class _LoginScreenState extends State<LoginScreen>
               ],
             ),
           ),
-          // زر نسخ السيرفر
-          IconButton(
-            onPressed: () {
-              Clipboard.setData(const ClipboardData(
-                text: AdminService.serverUrlFull,
-              ));
-              Fluttertoast.showToast(
-                msg: 'تم نسخ رابط السيرفر',
-                backgroundColor: AppColors.success,
-                textColor: Colors.white,
-              );
-            },
-            icon: const Icon(Icons.copy_rounded,
-                size: 16, color: AppColors.primary),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            tooltip: 'نسخ الرابط',
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: _showDeveloperContact,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.person_outline, size: 14, color: AppColors.textHint),
-              const SizedBox(width: 4),
-              Text(
-                '${AdminService.developerName} | v${AdminService.appVersion}',
-                style: GoogleFonts.cairo(
-                  fontSize: 11,
-                  color: AppColors.textHint,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '© ${AdminService.copyrightYear} ${AdminService.appName}',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.cairo(
-            fontSize: 10,
-            color: AppColors.textHint.withValues(alpha: 0.7),
-          ),
-        ),
-      ],
     );
   }
 
@@ -653,13 +581,13 @@ class _LoginScreenState extends State<LoginScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(Icons.help_outline_rounded, color: AppColors.primary),
             const SizedBox(width: 8),
             Text(
-              'كيف تسجل الدخول؟',
+              'تحتاج مساعدة؟',
               style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
             ),
           ],
@@ -668,35 +596,19 @@ class _LoginScreenState extends State<LoginScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _helpItem(Icons.person_outline,
-                'استخدم اسم المستخدم وكلمة المرور الخاصة بك من إدارة المدرسة'),
-            const SizedBox(height: 10),
-            _helpItem(Icons.wifi_outlined,
-                'تأكد من اتصالك بالإنترنت أثناء أول تسجيل دخول'),
-            const SizedBox(height: 10),
-            _helpItem(Icons.admin_panel_settings_outlined,
-                'في حال نسيت كلمة المرور، تواصل مع المدير المسؤول'),
-            const Divider(height: 20),
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(ctx);
-                _showDeveloperContact();
-              },
-              child: Row(
-                children: [
-                  const Icon(Icons.support_agent_outlined,
-                      color: AppColors.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    'تواصل مع المطور: ${AdminService.developerName}',
-                    style: GoogleFonts.cairo(
-                      fontSize: 12,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+            Text(
+              '• استخدم اسم المستخدم وكلمة المرور التي حصلت عليها من إدارة المدرسة.',
+              style: GoogleFonts.cairo(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '• تأكد من اتصالك بالإنترنت أثناء أول تسجيل دخول.',
+              style: GoogleFonts.cairo(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '• في حال نسيت كلمة المرور، تواصل مع المدير المسؤول.',
+              style: GoogleFonts.cairo(fontSize: 13),
             ),
           ],
         ),
@@ -706,124 +618,6 @@ class _LoginScreenState extends State<LoginScreen>
             child: Text('حسناً', style: GoogleFonts.cairo()),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _helpItem(IconData icon, String text) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: AppColors.primary, size: 16),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.cairo(
-              fontSize: 13,
-              height: 1.5,
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showDeveloperContact() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.engineering_rounded,
-                  color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'تواصل مع المطور',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _contactRow(Icons.person_rounded, 'الاسم',
-                AdminService.developerName, false),
-            const SizedBox(height: 10),
-            _contactRow(Icons.phone_rounded, 'واتساب',
-                AdminService.developerPhone, true),
-            const SizedBox(height: 10),
-            _contactRow(Icons.email_rounded, 'البريد',
-                AdminService.developerEmail, true),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('إغلاق', style: GoogleFonts.cairo()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _contactRow(IconData icon, String label, String value, bool canCopy) {
-    return GestureDetector(
-      onTap: canCopy
-          ? () {
-              Clipboard.setData(ClipboardData(text: value));
-              Fluttertoast.showToast(
-                msg: 'تم النسخ ✅',
-                backgroundColor: AppColors.success,
-                textColor: Colors.white,
-              );
-            }
-          : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.primary, size: 18),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.cairo(
-                    fontSize: 10,
-                    color: AppColors.textHint,
-                  ),
-                ),
-                Text(
-                  value,
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            if (canCopy)
-              Icon(Icons.copy_rounded, size: 14, color: AppColors.textHint),
-          ],
-        ),
       ),
     );
   }

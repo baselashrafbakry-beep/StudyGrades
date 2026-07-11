@@ -1,95 +1,47 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import '../models/subscription_model.dart';
+import '../models/academic_period.dart';
 import '../models/student_model.dart';
 import '../models/pending_sync.dart';
 import '../services/api_client.dart';
 import '../services/storage_service.dart';
 import '../services/connectivity_service.dart';
-import '../services/subscription_service.dart';
 import '../utils/error_handler.dart';
+
+enum SaveStudentResult {
+  synced,
+  queued,
+  localOnly,
+  noGrades,
+  queueFull,
+  subscriptionBlocked,
+}
 
 /// مزود الدرجات - يدير بيانات الفصل، مؤشر الطالب الحالي،
 /// تحديثات الدرجات، والمزامنة أونلاين/أوفلاين
 class GradingProvider extends ChangeNotifier {
   ClassroomData? _classroom;
   int _currentIndex = 0;
-  bool _gradingFinished =
-      false; // علم انتهاء الدرجات — يجعل currentStudent يرجع null لتفعيل شاشة الاحتفال
   bool _isLoading = false;
   bool _isSyncing = false;
   String? _error;
   String? _lastSyncMessage;
   bool _isOnline = true;
   int _pendingCount = 0;
+  Subscription _subscription = Subscription.legacyActive();
+  StreamSubscription<bool>? _connectivitySubscription;
 
-  /// عدد الطلاب الذين تم استبعادهم من القائمة بسبب تجاوز حد الخطة
-  /// الحالية (maxStudentsPerClass) — 0 يعني عدم وجود أي قصّ.
-  int _trimmedStudentsCount = 0;
-  int get trimmedStudentsCount => _trimmedStudentsCount;
-
-  /// يُرفع إلى true عند رفض فتح فصل جديد لتجاوز حد عدد الفصول
-  /// (maxClassesPerTeacher) الخاص بالباقة الحالية.
-  bool _classLimitExceeded = false;
-  bool get classLimitExceeded => _classLimitExceeded;
-
-  /// معرف الفصل الدراسي - قابل للتعيين ديناميكياً بدلاً من التشفير
-  int termId = 1;
-
-  /// رقم الأسبوع - قابل للتعيين ديناميكياً بدلاً من التشفير
-  int weekNumber = 1;
-
-  // ────────────────────────────────────────────────────────────────
-  // نقاط حَقن للاختبار فقط (Testability Seams) — لا تُستخدَم في كود
-  // الإنتاج الفعلي إطلاقاً؛ الهدف تمكين اختبار وحدات (unit tests)
-  // حتمية لسيناريوهات الشبكة/الاتصال دون:
-  //   1) إجراء اتصال شبكة حقيقي بخادم الإنتاج (apiClient يستهدف
-  //      رابط production ثابت افتراضياً).
-  //   2) الاعتماد على حزمة connectivity_plus التي تستخدم MethodChannel
-  //      أصلي غير مسجَّل في بيئة `flutter test` (Dart VM) فتُطلق
-  //      MissingPluginException عند استدعاء init() الحقيقية.
-  // كل النقاط أدناه اختيارية (nullable) وتبقى null في كود الإنتاج،
-  // فيُستخدَم السلوك الحقيقي كما هو تماماً دون أي تأثير.
-  // ────────────────────────────────────────────────────────────────
-
-  /// دالة بديلة لـ `apiClient.syncGrades` — تُستخدَم في الاختبارات
-  /// للتحكم الحتمي في نجاح/فشل "المزامنة" دون اتصال شبكة فعلي.
-  @visibleForTesting
-  Future<Map<String, dynamic>> Function({
-    required int termId,
-    required int weekNumber,
-    required String subject,
-    required List<Map<String, dynamic>> grades,
-    int? classId,
-  })? debugSyncOverride;
-
-  /// يفرض حالة الاتصال يدوياً في الاختبارات (بدلاً من انتظار
-  /// connectivityService الحقيقية التي تحتاج MethodChannel أصلي).
-  @visibleForTesting
-  void debugSetOnline(bool online) {
-    _isOnline = online;
-    notifyListeners();
-  }
-
-  /// يحقن فصلاً دراسياً جاهزاً مباشرةً في الاختبارات (بدلاً من
-  /// المرور عبر loadClassroom() التي تتطلب اتصال شبكة حقيقي).
-  @visibleForTesting
-  void debugSetClassroom(ClassroomData data) {
-    _classroom = data;
-    _currentIndex = 0;
-    _gradingFinished = false;
-    notifyListeners();
-  }
+  AcademicPeriod _period = const AcademicPeriod(termId: 1, weekNumber: 1);
 
   ClassroomData? get classroom => _classroom;
   List<Student> get students => _classroom?.students ?? [];
   List<GradeField> get fields => _classroom?.fields ?? [];
   int get currentIndex => _currentIndex;
 
-  bool get isGradingFinished => _gradingFinished;
-
-  /// الطالب الحالي — يرجع null عند انتهاء جميع الطلاب (يتيح عرض شاشة الاحتفال)
+  /// الطالب الحالي مع حماية من الفهرس خارج الحدود
   Student? get currentStudent {
-    // إذا رُفع علم الانتهاء → شاشة الاحتفال تظهر في grading_screen.dart
-    if (_gradingFinished) return null;
     final list = students;
     if (list.isEmpty) return null;
     final safeIdx = _currentIndex.clamp(0, list.length - 1);
@@ -102,6 +54,51 @@ class GradingProvider extends ChangeNotifier {
   String? get lastSyncMessage => _lastSyncMessage;
   bool get isOnline => _isOnline;
   int get pendingCount => _pendingCount;
+  Subscription get subscription => _subscription;
+  AcademicPeriod get period => _period;
+  int get termId => _period.termId;
+  int get weekNumber => _period.weekNumber;
+
+  void setAcademicPeriod({required int termId, required int weekNumber}) {
+    final next = AcademicPeriod.validated(
+      termId: termId,
+      weekNumber: weekNumber,
+    );
+    if (next.termId == _period.termId &&
+        next.weekNumber == _period.weekNumber) {
+      return;
+    }
+    _period = next;
+    _classroom = null;
+    _currentIndex = 0;
+    _error = null;
+    notifyListeners();
+  }
+
+  void setActiveOwner(String? ownerKey, {Subscription? subscription}) {
+    final previousOwner = StorageService.activeOwnerKey;
+    final previousSubscription = _subscription;
+    _subscription = subscription ?? Subscription.legacyActive();
+    StorageService.setActiveOwner(ownerKey);
+    _pendingCount = StorageService.pendingCount;
+    if (previousOwner != StorageService.activeOwnerKey) {
+      reset(notify: false);
+      notifyListeners();
+    } else if (_subscriptionKey(previousSubscription) !=
+        _subscriptionKey(_subscription)) {
+      _applyCommercialClassroomLimits();
+      notifyListeners();
+    }
+    if (StorageService.activeOwnerKey.isNotEmpty &&
+        _isOnline &&
+        _pendingCount > 0 &&
+        _subscription.isUsable) {
+      unawaited(Future<void>.microtask(syncPendingGrades));
+    }
+  }
+
+  String _subscriptionKey(Subscription s) =>
+      '${s.plan}|${s.status}|${s.expiresAt?.toIso8601String()}|${s.lifetime}';
 
   /// مجموع النقاط الممكنة لجميع البنود
   double get totalPossible => fields.fold<double>(0, (s, f) => s + f.max);
@@ -111,22 +108,25 @@ class GradingProvider extends ChangeNotifier {
     if (fields.isEmpty) return 0;
     var cnt = 0;
     for (final s in students) {
-      var ok = true;
-      for (final f in fields) {
-        if (!s.grades.containsKey(f.name)) {
-          ok = false;
-          break;
-        }
-      }
-      if (ok) cnt++;
+      if (isStudentComplete(s)) cnt++;
     }
     return cnt;
+  }
+
+  int completedFieldCount(Student student) {
+    return student.completedFieldCount(fields);
+  }
+
+  bool isStudentComplete(Student student) {
+    return student.isCompleteFor(fields);
   }
 
   GradingProvider() {
     _pendingCount = StorageService.pendingCount;
     _isOnline = connectivityService.isOnline;
-    connectivityService.onStatusChange.listen((online) {
+    _connectivitySubscription = connectivityService.onStatusChange.listen((
+      online,
+    ) {
       final wasOffline = !_isOnline;
       _isOnline = online;
       notifyListeners();
@@ -135,58 +135,12 @@ class GradingProvider extends ChangeNotifier {
         syncPendingGrades();
       }
     });
-
-    // 🔴 إصلاح ثغرة "فقدان مزامنة بدء التشغيل الباردة" (Cold-Start Sync
-    // Gap — اكتُشفت أثناء تدقيق Pillar 3 لوضع عدم الاتصال):
-    //
-    // كانت المزامنة التلقائية تعتمد حصرياً على الاستماع لـ
-    // `connectivityService.onStatusChange`، والذي لا يُطلِق حدثاً إلا
-    // عند حدوث *تغيّر فعلي* في حالة الاتصال (أوفلاين → أونلاين) أثناء
-    // تشغيل التطبيق. لكن هذا الـ Stream هو `broadcast` عادي بلا "replay"
-    // للأحداث الفائتة — والحدث الأول (`init()` في connectivityService)
-    // يُطلَق في `main()` **قبل** إنشاء `GradingProvider` (الذي يُنشأ
-    // بشكل كسول `lazy: true` عند أول استخدام فعلي للمزود)، فيفوت هذا
-    // الحدث الأول تماماً.
-    //
-    // السيناريو الحقيقي المتأثر (شائع جداً): يُغلق المستخدم التطبيق
-    // بينما يوجد لديه درجات معلّقة في قائمة الانتظار (Hive) بسبب انقطاع
-    // اتصال سابق، ثم يعيد فتح التطبيق **وهو متصل بالفعل** بالإنترنت
-    // (واي فاي/بيانات جوال) منذ البداية. في هذه الحالة لا يحدث أي
-    // "تحوّل" (transition) من أوفلاين لأونلاين على الإطلاق أثناء عمر
-    // التطبيق — فتبقى الدرجات المعلّقة عالقة بصمت في Hive إلى أن يكتشف
-    // المستخدم يدوياً وجود بيانات معلّقة ويضغط زر "مزامنة" يدوياً.
-    //
-    // ✅ الإصلاح: عند إنشاء GradingProvider، إذا كان الجهاز متصلاً
-    // بالفعل ويوجد عناصر معلّقة من جلسة سابقة → نُطلق محاولة مزامنة
-    // فورية دون انتظار أي "تحوّل" في حالة الاتصال. العملية غير حاجبة
-    // (fire-and-forget)، ومحمية داخلياً بعلم `_isSyncing` في
-    // `syncPendingGrades()` نفسها لمنع أي تكرار أو تعارض مع أي مزامنة
-    // أخرى قد تبدأ لاحقاً (مثل حدث onStatusChange الحقيقي إن حدث).
-    //
-    // نُؤجّل الاستدعاء عبر `Future.microtask` (وليس مباشرة داخل الـ
-    // constructor) لسببين:
-    //   1) اختباري: يسمح لكود الاختبار بحقن `debugSyncOverride` مباشرةً
-    //      بعد إنشاء الكائن (`GradingProvider()`) قبل أن تبدأ محاولة
-    //      المزامنة الفعلية بمايكروثانية واحدة فقط — بدون هذا التأجيل
-    //      كانت ستُستدعى `apiClient.syncGrades` الحقيقية فوراً وبشكل
-    //      متزامن أثناء تنفيذ الـ constructor نفسه، قبل أي فرصة للاختبار
-    //      لحقن البديل الآمن.
-    //   2) عملي: يتجنّب تنفيذ منطق I/O أثناء بناء الكائن مباشرة، وهو
-    //      نمط أكثر أماناً بشكل عام في constructors غير متزامنة.
-    if (_isOnline && _pendingCount > 0) {
-      Future.microtask(() {
-        // ignore: unawaited_futures
-        syncPendingGrades();
-      });
-    }
   }
 
-  /// يُعيد مزامنة `_pendingCount` مع القيمة الفعلية في `StorageService`
-  /// (يُستخدم بعد عمليات خارجية تُعدّل صندوق pending_grades_box مباشرة،
-  /// مثل مسح كل البيانات المحلية من شاشة الإعدادات).
-  void refreshPendingCount() {
-    _pendingCount = StorageService.pendingCount;
-    notifyListeners();
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> loadClassroom({
@@ -196,29 +150,19 @@ class GradingProvider extends ChangeNotifier {
   }) async {
     _isLoading = true;
     _error = null;
-    _classLimitExceeded = false;
-    _trimmedStudentsCount = 0;
     notifyListeners();
-
-    // فرض حد عدد الفصول (maxClassesPerTeacher) حسب باقة الاشتراك الحالية،
-    // قبل أي استدعاء للسيرفر — يُستثنى فصل العرض التجريبي (classId == 0).
-    final canOpen = await SubscriptionService.canOpenClass(classId);
-    if (!canOpen) {
-      _classLimitExceeded = true;
-      _isLoading = false;
-      notifyListeners();
-      return;
-    }
-
-    final cacheKey = 'class_${classId}_$subject';
+    final cacheKey = 'class_${classId}_${subject}_${_period.storageKey}';
     try {
       try {
         final data = await apiClient.getStudents(
           classId,
           subject,
           className: className,
+          termId: termId,
+          weekNumber: weekNumber,
         );
         _classroom = data;
+        _applyCommercialClassroomLimits();
         _currentIndex = 0;
         // حفظ محلي للوصول في وضع أوفلاين
         await StorageService.cacheClassroom(cacheKey, {
@@ -237,31 +181,13 @@ class GradingProvider extends ChangeNotifier {
             className: className,
             subject: subject,
           );
+          _applyCommercialClassroomLimits();
           _currentIndex = 0;
-          _error = 'تم التحميل من التخزين المحلي (وضع أوفلاين)';
+          _error ??= 'تم التحميل من التخزين المحلي (وضع أوفلاين)';
         } else {
           rethrow;
         }
       }
-
-      // فرض حد عدد الطلاب بالفصل (maxStudentsPerClass) حسب الباقة الحالية:
-      // نقصّ القائمة فعلياً على مستوى البيانات (وليس مجرد تحذير شكلي)
-      // حتى لا يتمكن المستخدم من رصد/تصدير درجات طلاب يتجاوزون حد باقته.
-      final maxStudents = await SubscriptionService.getMaxStudentsPerClass();
-      final c = _classroom;
-      if (c != null && maxStudents != -1 && c.students.length > maxStudents) {
-        _trimmedStudentsCount = c.students.length - maxStudents;
-        _classroom = ClassroomData(
-          classId: c.classId,
-          className: c.className,
-          subject: c.subject,
-          fields: c.fields,
-          students: c.students.sublist(0, maxStudents),
-        );
-      }
-
-      // سجّل هذا الفصل كمفتوح فعلياً بعد نجاح التحميل (من السيرفر أو الكاش)
-      await SubscriptionService.markClassOpened(classId);
     } catch (e) {
       _error = ErrorHandler.humanize(e);
     } finally {
@@ -270,15 +196,91 @@ class GradingProvider extends ChangeNotifier {
     }
   }
 
-  void updateGrade(int studentIdx, String fieldName, double value) {
+  /// تحميل بيانات تجريبية بدون API (للاختبار والعرض)
+  void loadDemoClassroom({required String className, required String subject}) {
+    const fields = [
+      {'name': 'oral', 'label': 'شفهي', 'max': 15.0},
+      {'name': 'written', 'label': 'تحريري', 'max': 25.0},
+      {'name': 'activity', 'label': 'نشاط', 'max': 10.0},
+    ];
+
+    final students = List.generate(10, (i) {
+      final num = (i + 1).toString().padLeft(3, '0');
+      return {
+        'id': i + 1,
+        'student_number': num,
+        'name': _demoNames[i % _demoNames.length],
+        'existing_grades': {},
+      };
+    });
+
+    _classroom = ClassroomData.fromJson(
+      {
+        'class_id': 0,
+        'class_name': className,
+        'subject': subject,
+        'grade_structure': fields,
+        'students': students,
+      },
+      className: className,
+      subject: subject,
+    );
+    _applyCommercialClassroomLimits();
+    _currentIndex = 0;
+    _error = null;
+    notifyListeners();
+  }
+
+  void _applyCommercialClassroomLimits() {
+    final c = _classroom;
+    if (c == null) return;
+    if (!_subscription.isUsable) {
+      _error = _subscription.blockedMessage('الفصول والدرجات');
+      return;
+    }
+    final maxStudents = _subscription.limits.maxStudentsPerClass;
+    if (maxStudents > 0 && c.students.length > maxStudents) {
+      _classroom = ClassroomData(
+        classId: c.classId,
+        className: c.className,
+        subject: c.subject,
+        fields: c.fields,
+        students: c.students.take(maxStudents).toList(growable: false),
+      );
+      _error =
+          'خطة ${_subscription.planLabel} تعرض أول $maxStudents طالب فقط في الفصل. '
+          'قم بترقية الخطة لفتح الفصل بالكامل.';
+    }
+  }
+
+  static const _demoNames = [
+    'أحمد محمد علي',
+    'فاطمة أحمد حسن',
+    'محمود عبد الله',
+    'مريم يوسف إبراهيم',
+    'علي حسن مصطفى',
+    'نورا إبراهيم سالم',
+    'كريم سمير عمر',
+    'رنا طارق محمد',
+    'عمر خالد عبد الرحمن',
+    'هدى سعيد عثمان',
+  ];
+
+  void updateGrade(int studentIdx, String fieldName, double? value) {
     if (_classroom == null) return;
     final list = students;
     if (studentIdx < 0 || studentIdx >= list.length) return;
+    if (list[studentIdx].isLocked) return;
+    if (value == null) {
+      list[studentIdx].grades.remove(fieldName);
+      notifyListeners();
+      return;
+    }
     final field = fields.firstWhere(
       (f) => f.name == fieldName,
       orElse: () => GradeField(name: fieldName, label: fieldName, max: 100),
     );
-    final clamped = value.clamp(0, field.max).toDouble();
+    final clamped = GradeField.clampGrade(value, field);
     list[studentIdx].grades[fieldName] = clamped;
     notifyListeners();
   }
@@ -290,20 +292,12 @@ class GradingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// انتقال للطالب التالي — للاستخدام العادي بين الطلاب
   void nextStudent() {
     final list = students;
     if (_currentIndex < list.length - 1) {
       _currentIndex++;
       notifyListeners();
     }
-    // لاحظ: عند آخر طالب يستخدم finishGrading() بدلاً من هذه
-  }
-
-  /// إنهاء جلسة التصحيح — يرفع علم الانتهاء لتفعيل شاشة الاحتفال
-  void finishGrading() {
-    _gradingFinished = true;
-    notifyListeners();
   }
 
   void previousStudent() {
@@ -315,7 +309,7 @@ class GradingProvider extends ChangeNotifier {
 
   void clearCurrentGrades() {
     final s = currentStudent;
-    if (s == null) return;
+    if (s == null || s.isLocked) return;
     s.grades.clear();
     notifyListeners();
   }
@@ -323,7 +317,7 @@ class GradingProvider extends ChangeNotifier {
   /// تسجيل الطالب الحالي غائباً: تعيين كل البنود = 0
   void markCurrentAbsent() {
     final s = currentStudent;
-    if (s == null) return;
+    if (s == null || s.isLocked) return;
     for (final f in fields) {
       s.grades[f.name] = 0;
     }
@@ -332,90 +326,89 @@ class GradingProvider extends ChangeNotifier {
 
   /// حفظ الطالب الحالي. يحاول المزامنة أونلاين أولاً،
   /// ثم يحفظ في قائمة الانتظار عند الفشل.
-  /// يُرجع true عند المزامنة الناجحة، false عند الحفظ المحلي.
-  ///
-  /// إصلاح ثغرة أمنية حرجة (فقدان بيانات — Pillar 1 Edge Case: "المستخدم
-  /// يغلق التطبيق فجأة أثناء الحفظ"):
-  /// كان الكود القديم يكتب إلى Hive (قائمة الانتظار المحلية) فقط **بعد**
-  /// فشل استدعاء الشبكة (داخل `catch`) أو في الفرع الأوفلاين الصريح.
-  /// أثناء انتظار `await apiClient.syncGrades(...)` (وهو ما قد يستغرق
-  /// ثوانٍ على شبكة بطيئة)، كانت الدرجات موجودة في الذاكرة (RAM) فقط —
-  /// فإذا أنهى نظام التشغيل عملية التطبيق فجأة (نفاد ذاكرة، إغلاق قسري
-  /// من المستخدم، انقطاع الاتصال بشكل يُعلّق طلب الشبكة طويلاً...) في
-  /// هذه النافذة الزمنية، تُفقَد درجات الطالب نهائياً دون أي أثر محلي.
-  ///
-  /// الإصلاح: نطبّق نمط "Write-Ahead Log" — نكتب الحمولة إلى صندوق
-  /// الانتظار في Hive **أولاً وقبل أي استدعاء شبكة على الإطلاق**، ثم
-  /// نحاول المزامنة، ثم نحذفها من قائمة الانتظار فقط عند نجاح المزامنة
-  /// الفعلي. هذا يضمن أن البيانات محفوظة على القرص بشكل دائم بغضّ النظر
-  /// عن اللحظة التي يُغلَق فيها التطبيق أو تنقطع الشبكة.
-  Future<bool> saveCurrentStudent() async {
+  Future<SaveStudentResult> saveCurrentStudent() async {
     final s = currentStudent;
     final c = _classroom;
-    if (s == null || c == null) return false;
+    if (s == null || c == null) return SaveStudentResult.noGrades;
+    if (!_subscription.isUsable) {
+      _error = _subscription.blockedMessage('حفظ الدرجات');
+      notifyListeners();
+      return SaveStudentResult.subscriptionBlocked;
+    }
 
-    // لا حاجة لحفظ طالب فارغ الدرجات
-    if (s.grades.isEmpty) return false;
+    final validGrades = <String, double>{};
+    for (final field in fields) {
+      final value = s.grades[field.name];
+      if (value != null && value.isFinite) {
+        validGrades[field.name] = GradeField.clampGrade(value, field);
+      }
+    }
+
+    if (validGrades.isEmpty) return SaveStudentResult.noGrades;
 
     final payload = PendingSync(
+      termId: termId,
+      weekNumber: weekNumber,
       studentId: s.id,
       studentName: s.name,
-      grades: Map<String, double>.from(s.grades),
+      grades: validGrades,
       timestamp: DateTime.now().toIso8601String(),
       classId: c.classId,
       subject: c.subject,
+      ownerKey: StorageService.activeOwnerKey,
     );
 
-    // وضع العرض التجريبي (class_id=0) لا يُزامن ولا يُضاف للـ pendingQueue
-    // إصلاح: كان يُضيف للـ pending رغم أنه لن يُزامن أبداً → يراكم بيانات وهمية
+    // وضع العرض التجريبي (class_id=0) لا يُزامن
     if (c.classId == 0) {
-      return false; // نجاح محلي فقط — بدون إضافة للـ queue
+      return SaveStudentResult.localOnly;
     }
 
-    // ── خطوة الأمان الأولى (Write-Ahead): اكتب على القرص فوراً، قبل أي
-    // انتظار شبكة، بحيث تكون الدرجات مؤمَّنة محلياً حتى لو أُغلِق
-    // التطبيق في اللحظة التالية مباشرةً. ──
-    await StorageService.addPendingSync(payload);
-    _pendingCount = StorageService.pendingCount;
-    notifyListeners();
+    final queuedResult = await _queuePending(payload);
+    if (queuedResult != SaveStudentResult.queued) return queuedResult;
 
-    if (!_isOnline) {
-      // أوفلاين: البيانات محفوظة بالفعل في قائمة الانتظار أعلاه، تنتظر
-      // المزامنة التلقائية عند عودة الاتصال (راجع مُنشئ الكلاس).
-      return false;
+    if (_isOnline) {
+      try {
+        await apiClient.syncGrades(
+          termId: termId,
+          weekNumber: weekNumber,
+          subject: c.subject,
+          classId: c.classId,
+          grades: [
+            {
+              'student_id': s.id,
+              'grades': validGrades,
+              'timestamp': payload.timestamp,
+            },
+          ],
+        );
+        await StorageService.removePendingForTarget(payload);
+        _pendingCount = StorageService.pendingCount;
+        notifyListeners();
+        return SaveStudentResult.synced;
+      } catch (e, st) {
+        ErrorHandler.logError(e, st, 'GradingProvider.saveCurrentStudent');
+        return SaveStudentResult.queued;
+      }
+    } else {
+      return SaveStudentResult.queued;
     }
+  }
 
+  Future<SaveStudentResult> _queuePending(PendingSync payload) async {
     try {
-      final syncFn = debugSyncOverride ?? apiClient.syncGrades;
-      await syncFn(
-        termId: termId,
-        weekNumber: weekNumber,
-        subject: c.subject,
-        classId: c.classId,
-        grades: [
-          {
-            'student_id': s.id,
-            'grades': s.grades,
-            'timestamp': payload.timestamp,
-          },
-        ],
-      );
-      // نجحت المزامنة: احذف هذا العنصر تحديداً من قائمة الانتظار (وليس
-      // القائمة كلها) لتفادي حذف عناصر أخرى معلّقة من طلاب/مواد مختلفين
-      // قد تكون أُضيفت بالتوازي أثناء انتظار هذا الطلب.
-      await StorageService.removePendingSync(
-        studentId: s.id,
-        subject: c.subject,
+      await StorageService.addPendingSync(
+        payload,
+        maxItemsForOwner: _subscription.limits.maxPendingSync,
       );
       _pendingCount = StorageService.pendingCount;
       notifyListeners();
-      return true;
-    } catch (e, st) {
-      ErrorHandler.logError(e, st, 'GradingProvider.saveCurrentStudent');
-      // فشلت المزامنة: البيانات محفوظة بالفعل في قائمة الانتظار من
-      // خطوة الـ Write-Ahead أعلاه — لا حاجة لأي إجراء إضافي، ستتم
-      // المزامنة تلقائياً لاحقاً عبر syncPendingGrades().
-      return false;
+      return SaveStudentResult.queued;
+    } on StateError catch (e, st) {
+      ErrorHandler.logError(e, st, 'GradingProvider.queuePending');
+      _error = e.message;
+      _pendingCount = StorageService.pendingCount;
+      notifyListeners();
+      return SaveStudentResult.queueFull;
     }
   }
 
@@ -430,13 +423,19 @@ class GradingProvider extends ChangeNotifier {
       for (var i = 0; i < list.length; i++) {
         if (list[i].grades.isEmpty) continue;
         _currentIndex = i;
-        final ok = await saveCurrentStudent();
-        if (ok) saved++;
+        final result = await saveCurrentStudent();
+        if (result == SaveStudentResult.synced ||
+            result == SaveStudentResult.queued ||
+            result == SaveStudentResult.localOnly) {
+          saved++;
+        }
       }
     } finally {
       // استعادة الفهرس الأصلي دائماً
-      _currentIndex =
-          originalIndex.clamp(0, list.isNotEmpty ? list.length - 1 : 0);
+      _currentIndex = originalIndex.clamp(
+        0,
+        list.isNotEmpty ? list.length - 1 : 0,
+      );
       notifyListeners();
     }
     return saved;
@@ -444,34 +443,15 @@ class GradingProvider extends ChangeNotifier {
 
   /// مزامنة جميع الدرجات المعلقة عند توفر الاتصال.
   /// يُرجع عدد الدرجات التي تمت مزامنتها.
-  ///
-  /// 🔴 إصلاح ثغرة حرجة إضافية (اكتُشفت أثناء تدقيق Pillar 1 — Race
-  /// Condition / فقدان بيانات صامت):
-  /// كانت النسخة القديمة تأخذ لقطة (snapshot) واحدة من قائمة الانتظار
-  /// في بداية الدالة `pending = StorageService.getPendingSyncs()`، ثم
-  /// بعد إتمام حلقة المزامنة (التي قد تستغرق عدة ثوانٍ لعدة طلبات
-  /// شبكة)، كانت تُنفّذ إما:
-  ///   • `clearPendingSyncs()` → يمسح **الصندوق بأكمله** في Hive، أو
-  ///   • `replacePendingSyncs(failed)` → **يستبدل الصندوق بأكمله**
-  ///     بقائمة العناصر الفاشلة فقط.
-  /// المشكلة: إذا أضاف المستخدم درجة طالب جديدة أثناء تشغيل هذه
-  /// الدالة (مثلاً عبر `saveCurrentStudent()` لطالب آخر بينما هو
-  /// يواصل التصحيح، أو مزامنة تلقائية عند عودة الاتصال بينما المستخدم
-  /// نشط) — فإن هذا العنصر الجديد **غير موجود في اللقطة الأصلية**،
-  /// لكنه **مكتوب بالفعل على القرص** (Write-Ahead) في تلك اللحظة.
-  /// عند وصول الدالة لنهايتها وتنفيذ `clearPendingSyncs()` أو
-  /// `replacePendingSyncs()` المستندين على اللقطة القديمة، كان هذا
-  /// العنصر الجديد **يُحذَف بصمت نهائياً** رغم أنه لم يُحاوَل مزامنته
-  /// إطلاقاً — فقدان بيانات كامل دون أي رسالة خطأ.
-  ///
-  /// ✅ الإصلاح: نفس نمط "الحذف الانتقائي الآمن" المُستخدَم في
-  /// `saveCurrentStudent()` — بعد نجاح مزامنة كل دفعة (subject+classId)
-  /// نحذف فقط عناصرها بالتحديد عبر `removePendingSync()`، بدلاً من أي
-  /// عملية مسح/استبدال شاملة تعتمد على لقطة قديمة. أي عنصر جديد يُضاف
-  /// أثناء تشغيل الدالة يبقى في الصندوق بأمان تام ولا يُلمَس أبداً ما
-  /// لم تتم مزامنته صراحةً هو نفسه.
   Future<int> syncPendingGrades() async {
     if (_isSyncing) return 0;
+    if (!_subscription.isUsable) {
+      _lastSyncMessage = _subscription.blockedMessage('مزامنة الدرجات');
+      notifyListeners();
+      return 0;
+    }
+    final syncOwner = StorageService.activeOwnerKey;
+    if (syncOwner.isEmpty) return 0;
     final pending = StorageService.getPendingSyncs();
     if (pending.isEmpty) return 0;
 
@@ -479,59 +459,49 @@ class GradingProvider extends ChangeNotifier {
     _lastSyncMessage = null;
     notifyListeners();
     int synced = 0;
+    final delivered = <PendingSync>[];
     try {
-      // تجميع حسب المادة ثم الفصل
-      final bySubject = <String, List<PendingSync>>{};
+      // تجميع حسب نفس هدف المزامنة حتى لا تنتقل درجات أسبوع/ترم إلى آخر.
+      final byTarget = <String, List<PendingSync>>{};
       for (final p in pending) {
-        bySubject.putIfAbsent(p.subject, () => []).add(p);
+        final key = '${p.termId}|${p.weekNumber}|${p.classId}|${p.subject}';
+        byTarget.putIfAbsent(key, () => []).add(p);
       }
-      for (final entry in bySubject.entries) {
-        final byClass = <int, List<PendingSync>>{};
-        for (final p in entry.value) {
-          byClass.putIfAbsent(p.classId, () => []).add(p);
-        }
-        for (final cEntry in byClass.entries) {
-          // تخطي فصل العرض التجريبي
-          if (cEntry.key == 0) continue;
-          try {
-            final syncFn = debugSyncOverride ?? apiClient.syncGrades;
-            await syncFn(
-              termId: termId,
-              weekNumber: weekNumber,
-              subject: entry.key,
-              classId: cEntry.key,
-              grades: cEntry.value
-                  .map(
-                    (e) => {
-                      'student_id': e.studentId,
-                      'grades': e.grades,
-                      'timestamp': e.timestamp,
-                    },
-                  )
-                  .toList(),
-            );
-            // نجحت مزامنة هذه الدفعة تحديداً: احذف عناصرها فقط، عنصراً
-            // عنصراً، بدل أي مسح/استبدال شامل للصندوق يعتمد على لقطة
-            // قديمة (راجع شرح إصلاح الـ Race Condition أعلاه).
-            for (final item in cEntry.value) {
-              await StorageService.removePendingSync(
-                studentId: item.studentId,
-                subject: item.subject,
-              );
-            }
-            synced += cEntry.value.length;
-          } catch (e, st) {
-            ErrorHandler.logError(e, st, 'GradingProvider.syncPending');
-            // فشلت هذه الدفعة: نتركها كما هي في الصندوق دون أي حذف —
-            // ستُعاد محاولة مزامنتها تلقائياً في الاستدعاء التالي.
-          }
+      for (final entry in byTarget.entries) {
+        if (StorageService.activeOwnerKey != syncOwner) break;
+        final group = entry.value;
+        final first = group.first;
+        if (first.classId == 0) continue;
+        try {
+          await apiClient.syncGrades(
+            termId: first.termId,
+            weekNumber: first.weekNumber,
+            subject: first.subject,
+            classId: first.classId,
+            grades: group
+                .map(
+                  (e) => {
+                    'student_id': e.studentId,
+                    'grades': e.grades,
+                    'timestamp': e.timestamp,
+                  },
+                )
+                .toList(),
+          );
+          synced += group.length;
+          delivered.addAll(group);
+        } catch (e, st) {
+          ErrorHandler.logError(e, st, 'GradingProvider.syncPending');
         }
       }
 
-      _pendingCount = StorageService.pendingCount;
-      _lastSyncMessage = synced > 0
-          ? 'تمت مزامنة $synced درجة بنجاح'
-          : 'لا توجد بيانات تمت مزامنتها';
+      await StorageService.removeDeliveredPending(delivered);
+      if (StorageService.activeOwnerKey == syncOwner) {
+        _pendingCount = StorageService.pendingCount;
+        _lastSyncMessage = synced > 0
+            ? 'تمت مزامنة $synced درجة بنجاح'
+            : 'لا توجد بيانات تمت مزامنتها';
+      }
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -544,14 +514,11 @@ class GradingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void reset() {
+  void reset({bool notify = true}) {
     _classroom = null;
     _currentIndex = 0;
-    _gradingFinished = false; // إعادة تعيين علم الانتهاء عند بدء جلسة جديدة
     _error = null;
     _lastSyncMessage = null;
-    _trimmedStudentsCount = 0;
-    _classLimitExceeded = false;
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 }

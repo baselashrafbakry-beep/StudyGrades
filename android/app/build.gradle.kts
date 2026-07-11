@@ -15,6 +15,15 @@ val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+fun signingProperty(name: String): String? =
+    keystoreProperties.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+
+val releaseStoreFile = signingProperty("storeFile")?.let { file(it) }
+val hasReleaseKeystore =
+    signingProperty("keyAlias") != null &&
+    signingProperty("keyPassword") != null &&
+    releaseStoreFile?.isFile == true &&
+    signingProperty("storePassword") != null
 
 android {
     namespace = "com.studygrades.app"
@@ -42,16 +51,18 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-            storePassword = keystoreProperties["storePassword"] as String?
+            keyAlias = signingProperty("keyAlias")
+            keyPassword = signingProperty("keyPassword")
+            storeFile = releaseStoreFile
+            storePassword = signingProperty("storePassword")
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // CRITICAL: Disabled minify/shrink to prevent ProGuard/R8 from
             // stripping reflection-based classes used by Flutter plugins.
             // Earlier builds with minify=true caused the app to freeze on
@@ -81,30 +92,22 @@ android {
             )
         }
     }
-
-    // ✅ تحسين حجم التطبيق (App Size Optimization) بطريقة آمنة تماماً:
-    // تقسيم APK حسب معمارية المعالج (ABI) بدلاً من "universal APK" واحد
-    // يحوي كل المعماريات معاً (armeabi-v7a + arm64-v8a + x86_64). هذا
-    // يقلّل حجم الملف الذي يُنزّله المستخدم النهائي بنسبة تصل لـ ~60%
-    // دون أي تأثير على كود التطبيق أو الـ reflection (بعكس isMinifyEnabled
-    // المُعطَّل عمداً أعلاه لأسباب موثَّقة). مهم بشكل خاص لأن ملف الإعداد
-    // التجاري (StudyGrades-commercial.env) يحدد DISTRIBUTION_CHANNEL=direct
-    // — أي توزيع مباشر لملف APK للمستخدم (ليس عبر Google Play الذي يُوزّع
-    // تلقائياً الـ ABI المناسب من AAB بدون الحاجة لهذا التقسيم اليدوي).
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-            isUniversalApk = true // يُنتج أيضاً نسخة شاملة كخيار احتياطي متوافق مع كل الأجهزة
-        }
-    }
 }
 
 flutter {
     source = "../.."
 }
 
-
-
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any {
+        it.name.contains("Release", ignoreCase = true)
+    }
+    if (releaseRequested && !hasReleaseKeystore) {
+        throw GradleException(
+            "Release signing is required. Configure android/key.properties " +
+                "with keyAlias, keyPassword, storeFile, and storePassword. " +
+                "storeFile must point to an existing keystore file."
+        )
+    }
+}
 

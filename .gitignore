@@ -4,10 +4,10 @@
 build/
 *.g.dart
 *.freezed.dart
-pubspec.lock
 
 # Android
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/app/debug/
 android/app/release/
@@ -39,20 +39,23 @@ macos/.symlinks/
 .flutter-plugins-dependencies
 *.bak
 release-key.jks
-key.properties
+node_modules/
+.env
+.env.*
+*.env
+.netlify/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+commercial_backend/node_modules/
+commercial_backend/.env
+commercial_backend/.env.*
+commercial_backend/.netlify/
 
-# Local dev artifacts
-server.log
-*.log
-fallback.log
-upload_files/
-
-# Backup / snapshot files (git history already preserves old versions)
-*.backup
-*.original
-.pub-cache-policy
-.pub-resolve-policy
-
-# Distributed release binaries (APK/AAB) — regeneratable via flutter build,
-# should not bloat the git repository with large binary files.
-release_artifacts/
+# Signing material - belt and suspenders: ignore by extension too, not just
+# the one filename above, so a keystore created under any other name (e.g.
+# Flutter's own docs use "upload-keystore.jks") never slips into git history.
+*.jks
+*.p12
+*.keystore

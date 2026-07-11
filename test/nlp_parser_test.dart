@@ -8,6 +8,11 @@ void main() {
       expect(r.numbers, containsAll([10, 12.5, 18]));
     });
 
+    test('parses decimal comma as one decimal grade', () {
+      final r = NLPParser.parse('12,5');
+      expect(r.numbers, [12.5]);
+    });
+
     test('parses Arabic-Indic digits (٠-٩)', () {
       final r = NLPParser.parse('١٥ ٢٠ ٨');
       expect(r.numbers, containsAll([15, 20, 8]));
@@ -42,6 +47,31 @@ void main() {
     test('parses compound 35 (خمسة وثلاثين)', () {
       final r = NLPParser.parse('خمسة وثلاثين');
       expect(r.numbers, contains(35));
+    });
+
+    test('parses multi-word teens once', () {
+      final r = NLPParser.parse('خمسة عشر');
+      expect(r.numbers, [15]);
+    });
+
+    test('preserves repeated equal grades', () {
+      final r = NLPParser.parse('خمسة خمسة');
+      expect(r.numbers, [5, 5]);
+    });
+
+    test('keeps leading waw when it is part of one', () {
+      expect(NLPParser.parse('\u0648\u0627\u062D\u062F').numbers, [1]);
+      expect(NLPParser.parse('\u0648\u0627\u062D\u062F\u0629').numbers, [1]);
+      expect(
+        NLPParser.parse('\u0648\u0627\u062D\u062F \u0648\u0646\u0635').numbers,
+        [1.5],
+      );
+      expect(
+        NLPParser.parse(
+          '\u0648\u0627\u062D\u062F \u0648\u0639\u0634\u0631\u064A\u0646',
+        ).numbers,
+        [21],
+      );
     });
   });
 

@@ -24,14 +24,19 @@ void main() {
       );
     });
 
-    test('error_audio_error و error_client → audioHardware (انقطاع الميكروفون)',
-        () {
-      expect(
-        classifyVoiceError('error_audio_error'),
-        VoiceErrorType.audioHardware,
-      );
-      expect(classifyVoiceError('error_client'), VoiceErrorType.audioHardware);
-    });
+    test(
+      'error_audio_error و error_client → audioHardware (انقطاع الميكروفون)',
+      () {
+        expect(
+          classifyVoiceError('error_audio_error'),
+          VoiceErrorType.audioHardware,
+        );
+        expect(
+          classifyVoiceError('error_client'),
+          VoiceErrorType.audioHardware,
+        );
+      },
+    );
 
     test('error_permission → permissionDenied', () {
       expect(
@@ -40,24 +45,21 @@ void main() {
       );
     });
 
-    test(
-      'error_network, error_network_timeout, error_server, '
-      'error_server_disconnected → network',
-      () {
-        for (final code in [
-          'error_network',
-          'error_network_timeout',
-          'error_server',
-          'error_server_disconnected',
-        ]) {
-          expect(
-            classifyVoiceError(code),
-            VoiceErrorType.network,
-            reason: 'الرمز $code يجب أن يُصنَّف كخطأ شبكة',
-          );
-        }
-      },
-    );
+    test('error_network, error_network_timeout, error_server, '
+        'error_server_disconnected → network', () {
+      for (final code in [
+        'error_network',
+        'error_network_timeout',
+        'error_server',
+        'error_server_disconnected',
+      ]) {
+        expect(
+          classifyVoiceError(code),
+          VoiceErrorType.network,
+          reason: 'الرمز $code يجب أن يُصنَّف كخطأ شبكة',
+        );
+      }
+    });
 
     test('error_busy و error_too_many_requests → busy', () {
       expect(classifyVoiceError('error_busy'), VoiceErrorType.busy);
@@ -67,20 +69,17 @@ void main() {
       );
     });
 
-    test(
-      'error_language_not_supported و error_language_unavailable → '
-      'languageUnavailable',
-      () {
-        expect(
-          classifyVoiceError('error_language_not_supported'),
-          VoiceErrorType.languageUnavailable,
-        );
-        expect(
-          classifyVoiceError('error_language_unavailable'),
-          VoiceErrorType.languageUnavailable,
-        );
-      },
-    );
+    test('error_language_not_supported و error_language_unavailable → '
+        'languageUnavailable', () {
+      expect(
+        classifyVoiceError('error_language_not_supported'),
+        VoiceErrorType.languageUnavailable,
+      );
+      expect(
+        classifyVoiceError('error_language_unavailable'),
+        VoiceErrorType.languageUnavailable,
+      );
+    });
 
     test('رمز غير معروف → unknown (لا يُسبب انهياراً)', () {
       expect(
@@ -120,18 +119,20 @@ void main() {
   });
 
   group('MicPermissionResult - قيم واضحة لكل حالة صلاحية', () {
-    test('يحتوي على 4 حالات: granted, denied, permanentlyDenied, restricted',
-        () {
-      expect(MicPermissionResult.values.length, 4);
-      expect(
-        MicPermissionResult.values,
-        containsAll([
-          MicPermissionResult.granted,
-          MicPermissionResult.denied,
-          MicPermissionResult.permanentlyDenied,
-          MicPermissionResult.restricted,
-        ]),
-      );
-    });
+    test(
+      'يحتوي على 4 حالات: granted, denied, permanentlyDenied, restricted',
+      () {
+        expect(MicPermissionResult.values.length, 4);
+        expect(
+          MicPermissionResult.values,
+          containsAll([
+            MicPermissionResult.granted,
+            MicPermissionResult.denied,
+            MicPermissionResult.permanentlyDenied,
+            MicPermissionResult.restricted,
+          ]),
+        );
+      },
+    );
   });
 }

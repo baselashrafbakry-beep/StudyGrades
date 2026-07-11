@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/admin_service.dart';
-import '../../providers/theme_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 
 /// شاشة إعدادات النظام - للمطور فقط
@@ -19,6 +18,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   final _appNameCtrl = TextEditingController();
   final _supportEmailCtrl = TextEditingController();
   bool _maintenanceMode = false;
+  bool _allowRegistration = false;
   bool _enableAnalytics = true;
   bool _enableServerSpeech = true;
   bool _enableOfflineMode = true;
@@ -31,44 +31,62 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    _apiUrlCtrl.text = await AdminService.getSystemSetting<String>(
-          'api_url',
-          defaultValue: 'https://studygrades2026.pythonanywhere.com/api/mobile',
+    if (mounted) setState(() => _loading = true);
+    const apiUrl = ApiClient.baseUrl;
+    final appName =
+        await AdminService.getSystemSetting<String>(
+          'app_name',
+          defaultValue: 'StudyGrades 2026',
         ) ??
         '';
-    _appNameCtrl.text = await AdminService.getSystemSetting<String>(
-          'app_name',
-          defaultValue: AdminService.appName,
-        ) ??
-        AdminService.appName;
-    _supportEmailCtrl.text = await AdminService.getSystemSetting<String>(
+    final supportEmail =
+        await AdminService.getSystemSetting<String>(
           'support_email',
-          defaultValue: AdminService.developerEmail,
+          defaultValue: 'basel.ashraf@studygrades.com',
         ) ??
-        AdminService.developerEmail;
-    _maintenanceMode = await AdminService.getSystemSetting<bool>(
+        '';
+    final maintenanceMode =
+        await AdminService.getSystemSetting<bool>(
           'maintenance_mode',
           defaultValue: false,
         ) ??
         false;
-    _enableAnalytics = await AdminService.getSystemSetting<bool>(
+    final allowRegistration =
+        await AdminService.getSystemSetting<bool>(
+          'allow_registration',
+          defaultValue: false,
+        ) ??
+        false;
+    final enableAnalytics =
+        await AdminService.getSystemSetting<bool>(
           'enable_analytics',
           defaultValue: true,
         ) ??
         true;
-    _enableServerSpeech = await AdminService.getSystemSetting<bool>(
+    final enableServerSpeech =
+        await AdminService.getSystemSetting<bool>(
           'enable_server_speech',
           defaultValue: true,
         ) ??
         true;
-    _enableOfflineMode = await AdminService.getSystemSetting<bool>(
+    final enableOfflineMode =
+        await AdminService.getSystemSetting<bool>(
           'enable_offline_mode',
           defaultValue: true,
         ) ??
         true;
     if (!mounted) return;
-    setState(() => _loading = false);
+    _apiUrlCtrl.text = apiUrl;
+    _appNameCtrl.text = appName;
+    _supportEmailCtrl.text = supportEmail;
+    setState(() {
+      _maintenanceMode = maintenanceMode;
+      _allowRegistration = allowRegistration;
+      _enableAnalytics = enableAnalytics;
+      _enableServerSpeech = enableServerSpeech;
+      _enableOfflineMode = enableOfflineMode;
+      _loading = false;
+    });
   }
 
   @override
@@ -80,16 +98,26 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   }
 
   Future<void> _saveAll() async {
-    await AdminService.setSystemSetting('api_url', _apiUrlCtrl.text.trim());
+    await AdminService.setSystemSetting('api_url', ApiClient.baseUrl);
     await AdminService.setSystemSetting('app_name', _appNameCtrl.text.trim());
     await AdminService.setSystemSetting(
-        'support_email', _supportEmailCtrl.text.trim());
+      'support_email',
+      _supportEmailCtrl.text.trim(),
+    );
     await AdminService.setSystemSetting('maintenance_mode', _maintenanceMode);
+    await AdminService.setSystemSetting(
+      'allow_registration',
+      _allowRegistration,
+    );
     await AdminService.setSystemSetting('enable_analytics', _enableAnalytics);
     await AdminService.setSystemSetting(
-        'enable_server_speech', _enableServerSpeech);
+      'enable_server_speech',
+      _enableServerSpeech,
+    );
     await AdminService.setSystemSetting(
-        'enable_offline_mode', _enableOfflineMode);
+      'enable_offline_mode',
+      _enableOfflineMode,
+    );
 
     Fluttertoast.showToast(
       msg: 'تم حفظ الإعدادات بنجاح',
@@ -100,8 +128,6 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -126,6 +152,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                           ctrl: _apiUrlCtrl,
                           icon: Icons.api_rounded,
                           label: 'رابط الخادم (API URL)',
+                          readOnly: true,
                         ),
                         _textTile(
                           ctrl: _supportEmailCtrl,
@@ -142,6 +169,15 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
                           value: _maintenanceMode,
                           onChanged: (v) =>
                               setState(() => _maintenanceMode = v),
+                        ),
+                        _switchTile(
+                          icon: Icons.person_add_rounded,
+                          color: AppColors.warning,
+                          title: 'السماح بالتسجيل الذاتي',
+                          subtitle: 'تمكين المستخدمين من إنشاء حسابات',
+                          value: _allowRegistration,
+                          onChanged: (v) =>
+                              setState(() => _allowRegistration = v),
                         ),
                         _switchTile(
                           icon: Icons.analytics_rounded,
@@ -284,22 +320,21 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
     required TextEditingController ctrl,
     required IconData icon,
     required String label,
+    bool readOnly = false,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6),
         ],
       ),
       child: TextField(
         controller: ctrl,
+        readOnly: readOnly,
         style: GoogleFonts.cairo(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
@@ -324,13 +359,10 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6),
         ],
       ),
       child: Row(
@@ -367,11 +399,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
               ],
             ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: color,
-          ),
+          Switch(value: value, onChanged: onChanged, activeThumbColor: color),
         ],
       ),
     );
@@ -452,8 +480,10 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: Text('مسح',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text(
+              'مسح',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),

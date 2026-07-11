@@ -4,14 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../services/admin_service.dart';
+import '../services/app_initialization_service.dart';
 import '../services/storage_service.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
-import 'maintenance_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -60,7 +58,11 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) _textCtrl.forward();
     });
 
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _bootstrap();
+      }
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -78,29 +80,21 @@ class _SplashScreenState extends State<SplashScreen>
       }
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (_, animation, __) => FadeTransition(
-            opacity: animation,
-            child: screen,
-          ),
+          pageBuilder: (_, animation, __) =>
+              FadeTransition(opacity: animation, child: screen),
           transitionDuration: const Duration(milliseconds: 600),
         ),
       );
     }
 
-    // ضمان عدم تجميد شاشة البدء (Safety timer 4 ثواني)
-    Future.delayed(const Duration(milliseconds: 4000), () {
-      if (!navigated && mounted) {
-        if (kDebugMode) {
-          debugPrint('[SPLASH] ⚠️ FALLBACK TRIGGERED - LoginScreen');
-        }
-        navigateTo(const LoginScreen());
-      }
-    });
-
     final auth = context.read<AuthProvider>();
 
     bool isAuth = false;
     try {
+      final initSuccess = await appInitialization.initializeApp();
+      if (kDebugMode) {
+        debugPrint('[SPLASH] init ${initSuccess ? "OK" : "with errors"}');
+      }
       await auth.restoreSession().timeout(const Duration(milliseconds: 2500));
       isAuth = auth.isAuthenticated;
     } catch (e) {
@@ -110,37 +104,21 @@ class _SplashScreenState extends State<SplashScreen>
 
     bool seenIntro = true;
     try {
-      seenIntro = await StorageService.hasSeenIntro()
-          .timeout(const Duration(milliseconds: 800));
+      seenIntro = await StorageService.hasSeenIntro().timeout(
+        const Duration(milliseconds: 800),
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('[SPLASH] ⚠️ Intro check failed: $e');
       seenIntro = true;
     }
 
-    // حد أدنى لظهور شاشة البدء
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // Keep a short minimum splash so navigation does not feel abrupt without
+    // adding avoidable startup latency on slower devices.
+    await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted || navigated) return;
 
-    // فحص وضع الصيانة — يُستثنى منه المطور/المدير حتى يتمكنوا من
-    // الدخول وإيقاف الصيانة من لوحة التحكم عند الحاجة
-    bool maintenanceMode = false;
-    try {
-      maintenanceMode = await AdminService.getSystemSetting<bool>(
-            'maintenance_mode',
-            defaultValue: false,
-          ).timeout(const Duration(milliseconds: 800)) ??
-          false;
-    } catch (e) {
-      if (kDebugMode) debugPrint('[SPLASH] ⚠️ Maintenance check failed: $e');
-    }
-
-    final canBypassMaintenance =
-        isAuth && (auth.user?.canEditSystemSettings ?? false);
-
     Widget nextScreen;
-    if (maintenanceMode && !canBypassMaintenance) {
-      nextScreen = const MaintenanceScreen();
-    } else if (isAuth) {
+    if (isAuth) {
       nextScreen = const HomeScreen();
     } else if (!seenIntro) {
       nextScreen = const OnboardingScreen();
@@ -164,17 +142,11 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF0D47A1),
-              Color(0xFF1565C0),
-              Color(0xFF1976D2),
-            ],
+            colors: [Color(0xFF0D47A1), Color(0xFF1565C0), Color(0xFF1976D2)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             stops: [0.0, 0.5, 1.0],
@@ -196,12 +168,12 @@ class _SplashScreenState extends State<SplashScreen>
                       child: Column(
                         children: [
                           Text(
-                            'StudyGrades',
+                            'StudyGrades 2026',
                             style: GoogleFonts.cairo(
-                              fontSize: 26,
+                              fontSize: 30,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              letterSpacing: 1.0,
+                              letterSpacing: 1.2,
                               shadows: [
                                 Shadow(
                                   color: Colors.black.withValues(alpha: 0.3),
@@ -246,13 +218,7 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
             Positioned(
-              // إضافة نسخة آمنة من المسافة السفلية (safe-area) لمنع تداخل
-              // نص الإصدار/حقوق النشر مع شريط تنقل الإيماءات (gesture
-              // navigation bar) في الأجهزة الحديثة بدون أزرار فعلية —
-              // الخلفية المتدرجة نفسها تبقى full-bleed (بدون SafeArea) وهو
-              // التصميم المقصود لشاشة splash، لكن النص القابل للقراءة
-              // يحتاج احترام الحافة الآمنة تحديداً.
-              bottom: 30 + MediaQuery.of(context).padding.bottom,
+              bottom: 30,
               left: 0,
               right: 0,
               child: FadeTransition(
@@ -260,7 +226,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'v${AdminService.appVersion}',
+                      'v1.0.0',
                       style: GoogleFonts.cairo(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.7),
@@ -268,7 +234,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '© ${AdminService.copyrightYear} — ${AdminService.developerName} | ${AdminService.developerPhone}',
+                      '© 2026 — للمعلم باسل أشرف',
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.6),
@@ -320,7 +286,7 @@ class _SplashScreenState extends State<SplashScreen>
                 width: 130,
                 height: 130,
                 decoration: BoxDecoration(
-                  color: AppColors.cardBackground,
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(32),
                   boxShadow: [
                     BoxShadow(

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../services/admin_service.dart';
-import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 
 /// شاشة سجل النشاطات الإدارية
@@ -86,8 +84,6 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final df = DateFormat('dd/MM/yyyy - HH:mm', 'ar');
     final types = _activities.map((a) => a['type'] as String).toSet().toList();
 
@@ -102,108 +98,109 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _filtered.isEmpty
-                      ? _buildEmpty()
-                      : RefreshIndicator(
-                          onRefresh: _load,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
-                            itemCount: _filtered.length,
-                            itemBuilder: (ctx, i) {
-                              final a = _filtered[i];
-                              final type = a['type']?.toString() ?? '';
-                              final desc = a['description']?.toString() ?? '';
-                              DateTime? ts;
-                              try {
-                                ts = DateTime.parse(a['timestamp'] ?? '');
-                              } catch (_) {
-                                // Invalid timestamp - leave ts null
-                              }
-                              final color = _typeColor(type);
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.cardBackground,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.03),
-                                      blurRadius: 6,
-                                    ),
-                                  ],
+                  ? _buildEmpty()
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
+                        itemCount: _filtered.length,
+                        itemBuilder: (ctx, i) {
+                          final a = _filtered[i];
+                          final type = a['type']?.toString() ?? '';
+                          final desc = a['description']?.toString() ?? '';
+                          DateTime? ts;
+                          try {
+                            ts = DateTime.parse(a['timestamp'] ?? '');
+                          } catch (_) {
+                            // Invalid timestamp - leave ts null
+                          }
+                          final color = _typeColor(type);
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 6,
                                 ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.13),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Icon(_typeIcon(type),
-                                          color: color, size: 20),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.13),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    _typeIcon(type),
+                                    color: color,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              if (ts != null)
-                                                Text(
-                                                  df.format(ts),
-                                                  style: GoogleFonts.cairo(
-                                                    fontSize: 10,
-                                                    color: AppColors.textHint,
-                                                  ),
-                                                ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: color.withValues(
-                                                      alpha: 0.13),
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                ),
-                                                child: Text(
-                                                  type,
-                                                  style: GoogleFonts.cairo(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: color,
-                                                  ),
-                                                ),
+                                          if (ts != null)
+                                            Text(
+                                              df.format(ts),
+                                              style: GoogleFonts.cairo(
+                                                fontSize: 10,
+                                                color: AppColors.textHint,
                                               ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            desc,
-                                            textAlign: TextAlign.right,
-                                            style: GoogleFonts.cairo(
-                                              fontSize: 12,
-                                              color: AppColors.textPrimary,
+                                            ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: color.withValues(
+                                                alpha: 0.13,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              type,
+                                              style: GoogleFonts.cairo(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: color,
+                                              ),
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        desc,
+                                        textAlign: TextAlign.right,
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 12,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              );
-                            },
-                          ),
-                        ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -261,15 +258,12 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
   Widget _buildFilterChips(List<String> types) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      color: AppColors.cardBackground,
+      color: Colors.white,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
-          children: [
-            _chip('الكل', 'all'),
-            ...types.map((t) => _chip(t, t)),
-          ],
+          children: [_chip('الكل', 'all'), ...types.map((t) => _chip(t, t))],
         ),
       ),
     );

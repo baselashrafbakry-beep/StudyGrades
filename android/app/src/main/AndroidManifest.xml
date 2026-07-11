@@ -3,37 +3,22 @@
     <!-- Internet & Network State (for API calls + connectivity_plus) -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 
     <!-- Microphone & Audio Recording (record + speech_to_text) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
-    <uses-permission android:name="android.permission.BLUETOOTH"/>
-
-    <!-- Storage for sharing exported CSV (Android 12 and below) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
-
-    <!-- ميزة الميكروفون: غير إلزامية (required="false") لأن التطبيق يوفر
-         مساراً بديلاً كاملاً وفعّالاً لإدخال الدرجات يدوياً عبر لوحة
-         المفاتيح (انظر GradeFieldCard.TextField مع keyboardType رقمي) —
-         التسجيل الصوتي ميزة مساعدة اختيارية فقط. لو تُرك required="true"
-         (كما كان سابقاً)، فسيمنع متجر Google Play تثبيت التطبيق تلقائياً
-         على أي جهاز بدون ميكروفون فعلي (بعض الأجهزة اللوحية/التلفزيونات
-         الذكية)، رغم أن التطبيق يعمل بكامل وظائفه بدونه. VoiceService
-         يتعامل بالفعل بأمان مع حالة رفض الصلاحية (denied/permanentlyDenied)
-         ويسمح للمستخدم بالمتابعة يدوياً، لذا لا حاجة لفرض الميزة على مستوى
-         النظام. -->
+    <!-- Voice input is optional; manual grading remains usable without a mic. -->
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />
 
     <application
-        android:label="StudyGrades"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="false"
-        android:requestLegacyExternalStorage="true">
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

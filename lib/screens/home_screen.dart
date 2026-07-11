@@ -6,12 +6,32 @@ import '../models/hierarchy_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/grading_provider.dart';
 import '../services/api_client.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
+import '../utils/error_handler.dart';
 import 'subject_selection_screen.dart';
 import 'settings_screen.dart';
 import 'activity_log_screen.dart';
 import 'dashboard_screen.dart';
+import 'grading_screen.dart';
+
+/// شاشة اختيار المادة للعرض التجريبي (بدون API)
+class SubjectSelectionScreenDemo extends StatelessWidget {
+  const SubjectSelectionScreenDemo({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final grading = context.read<GradingProvider>();
+    // بيانات تجريبية جاهزة - انتقل مباشرة لشاشة الرصد
+    if (grading.classroom == null) {
+      grading.loadDemoClassroom(className: 'فصل تجريبي أ', subject: 'عام');
+    }
+    return const GradingScreen(
+      classId: 0,
+      className: 'فصل تجريبي أ',
+      subject: 'عام',
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,10 +63,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _hierarchy = data;
         _loading = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      ErrorHandler.logError(e, st, 'HomeScreen.fetchHierarchy');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = ErrorHandler.humanize(e);
         _loading = false;
       });
     }
@@ -54,8 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final grading = context.watch<GradingProvider>();
 
@@ -73,10 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.zero,
-                  children: [
-                    _buildQuickActions(),
-                    _buildBody(),
-                  ],
+                  children: [_buildQuickActions(), _buildBody()],
                 ),
               ),
             ),
@@ -100,9 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
               IconButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 ),
                 tooltip: 'الإعدادات',
                 icon: const Icon(Icons.settings_rounded, color: Colors.white),
@@ -110,9 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
               IconButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ActivityLogScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ActivityLogScreen()),
                 ),
                 tooltip: 'سجل النشاطات',
                 icon: const Icon(Icons.history_rounded, color: Colors.white),
@@ -169,6 +181,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontSize: 18,
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    auth.user == null
+                        ? 'بدون اشتراك'
+                        : '${auth.user!.subscription.planLabel} • ${auth.user!.subscription.statusLabel}',
+                    style: GoogleFonts.cairo(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -269,8 +292,11 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded,
-              color: AppColors.warning, size: 18),
+          const Icon(
+            Icons.wifi_off_rounded,
+            color: AppColors.warning,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -294,14 +320,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_loading) return _buildShimmer();
 
     if (_error != null) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
+      return Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             const SizedBox(height: 80),
-            Icon(Icons.cloud_off_rounded,
-                size: 80, color: Colors.grey.shade400),
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 80,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(height: 18),
             Text(
               'تعذّر جلب البيانات',
@@ -326,14 +354,15 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.refresh),
               label: Text('إعادة المحاولة', style: GoogleFonts.cairo()),
             ),
+            const SizedBox(height: 18),
+            _buildDemoEntryCard(),
           ],
         ),
       );
     }
 
     if (_hierarchy.isEmpty) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
+      return Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
@@ -350,18 +379,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(
               'تأكد من الاتصال بالإنترنت وإعداد السيرفر',
-              style: GoogleFonts.cairo(
-                fontSize: 12,
-                color: AppColors.textHint,
-              ),
+              style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textHint),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
-            ElevatedButton.icon(
-              onPressed: _fetch,
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text('إعادة المحاولة', style: GoogleFonts.cairo()),
-            ),
+            _buildDemoEntryCard(),
           ],
         ),
       );
@@ -471,11 +493,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       return;
                     }
                     _showSnack('جاري المزامنة...');
-                    final synced = await grading.syncPendingGrades();
+                    await grading.syncPendingGrades();
                     if (!mounted) return;
-                    _showSnack(synced > 0
-                        ? 'تمت مزامنة $synced درجة بنجاح ✅'
-                        : 'فشلت المزامنة — تحقق من الاتصال');
+                    _showSnack('تمت المزامنة بنجاح');
                   },
                 ),
               ),
@@ -487,9 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.warning,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
                 ),
               ),
@@ -507,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: AppColors.cardBackground,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.08),
@@ -554,11 +572,78 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildDemoEntryCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.play_circle_outline,
+                color: AppColors.info,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'تجربة النظام',
+                style: GoogleFonts.cairo(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.info,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'جرّب الرصد الصوتي بدون اتصال بالسيرفر (بيانات تجريبية)',
+            style: GoogleFonts.cairo(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () {
+              final grading = context.read<GradingProvider>();
+              grading.loadDemoClassroom(
+                className: 'فصل تجريبي أ',
+                subject: 'عام',
+              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SubjectSelectionScreenDemo(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.info,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: Text(
+              'ابدأ التجربة',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStageCard(HierarchyItem stage) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -617,87 +702,91 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ]
               : stage.classes
-                  .map(
-                    (c) => InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => SubjectSelectionScreen(
-                            classId: c.id,
-                            className: c.name,
+                    .map(
+                      (c) => InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SubjectSelectionScreen(
+                              classId: c.id,
+                              className: c.name,
+                            ),
+                          ),
+                        ),
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.class_rounded,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  c.name,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 16,
+                                color: AppColors.textHint,
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      child: Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(
-                                  alpha: 0.1,
-                                ),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.class_rounded,
-                                color: AppColors.primary,
-                                size: 18,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                c.name,
-                                style: GoogleFonts.cairo(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                                textAlign: TextAlign.right,
-                              ),
-                            ),
-                            Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              size: 16,
-                              color: AppColors.textHint,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
+                    )
+                    .toList(),
         ),
       ),
     );
   }
 
   Widget _buildShimmer() {
-    return ListView.builder(
+    return Padding(
       padding: const EdgeInsets.all(16),
-      itemCount: 6,
-      itemBuilder: (_, __) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Shimmer.fromColors(
-          baseColor: Colors.grey.shade300,
-          highlightColor: Colors.grey.shade100,
-          child: Container(
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.cardBackground,
-              borderRadius: BorderRadius.circular(16),
+      child: Column(
+        children: List.generate(
+          6,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Shimmer.fromColors(
+              baseColor: Colors.grey.shade300,
+              highlightColor: Colors.grey.shade100,
+              child: Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
         ),

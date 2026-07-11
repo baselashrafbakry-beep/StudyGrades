@@ -6,7 +6,6 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../models/pending_sync.dart';
 import '../providers/grading_provider.dart';
 import '../services/storage_service.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 /// شاشة سجل النشاطات - عرض المزامنات المعلقة والمكتملة
@@ -42,26 +41,12 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       );
       return;
     }
-    final pendingBefore = _pending.length;
     final synced = await grading.syncPendingGrades();
     if (!mounted) return;
-    String msg;
-    Color bg;
-    if (synced > 0) {
-      msg = 'تمت مزامنة $synced عنصر بنجاح ✅';
-      bg = AppColors.success;
-    } else if (pendingBefore == 0) {
-      msg = 'لا توجد درجات بانتظار المزامنة';
-      bg = AppColors.info;
-    } else {
-      msg = 'فشلت المزامنة — تحقق من الاتصال';
-      bg = AppColors.error;
-    }
     Fluttertoast.showToast(
-      msg: msg,
-      backgroundColor: bg,
+      msg: synced > 0 ? 'تمت مزامنة $synced عنصر بنجاح' : 'فشلت المزامنة',
+      backgroundColor: synced > 0 ? AppColors.success : AppColors.error,
       textColor: Colors.white,
-      toastLength: Toast.LENGTH_LONG,
     );
     _refresh();
   }
@@ -80,13 +65,14 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded,
-                color: AppColors.error, size: 26),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.error,
+              size: 26,
+            ),
             const SizedBox(width: 8),
             Text(
               'حذف جميع المعلقات',
@@ -107,8 +93,10 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('حذف الكل',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text(
+              'حذف الكل',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -135,8 +123,6 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final grading = context.watch<GradingProvider>();
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -320,11 +306,9 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.warning.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -416,7 +400,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.access_time_rounded,
                       size: 14,
                       color: AppColors.textHint,
@@ -486,7 +470,7 @@ class _ActivityLogScreenState extends State<ActivityLogScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),

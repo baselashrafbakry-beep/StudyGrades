@@ -4,84 +4,52 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:speech_to_text/speech_recognition_error.dart';
 import '../utils/error_handler.dart';
 
-/// نتيجة تفصيلية لطلب صلاحية الميكروفون — تُميّز بين الرفض المؤقت
-/// (يمكن إعادة الطلب) والرفض الدائم (يجب التوجيه لإعدادات النظام).
-enum MicPermissionResult {
-  granted,
-  denied,
-  permanentlyDenied,
-  restricted,
-}
+enum MicPermissionResult { granted, denied, permanentlyDenied, restricted }
 
-/// تصنيف أخطاء التعرف الصوتي إلى فئات مفهومة تُترجَم لرسائل عربية
-/// واضحة للمستخدم بدل عرض رمز خطأ تقني غير مفهوم.
 enum VoiceErrorType {
-  /// لم يُسمع كلام واضح — غالباً بسبب ضوضاء عالية أو صمت أو نطق غير مفهوم
   noSpeechDetected,
-
-  /// خطأ في هاردوير الصوت — غالباً انقطاع الميكروفون أو استخدامه من تطبيق آخر
   audioHardware,
-
-  /// صلاحية الميكروفون مرفوضة على مستوى النظام
   permissionDenied,
-
-  /// مشكلة اتصال بالشبكة (عند استخدام التعرف الصوتي عبر السيرفر)
   network,
-
-  /// المحرك الصوتي مشغول بجلسة أخرى أو طلبات كثيرة جداً
   busy,
-
-  /// اللغة/اللهجة المطلوبة غير مدعومة على هذا الجهاز
   languageUnavailable,
-
-  /// خطأ غير مصنّف
   unknown,
 }
 
-/// رسائل عربية جاهزة لعرضها للمستخدم حسب نوع الخطأ.
 extension VoiceErrorTypeMessage on VoiceErrorType {
   String get arabicMessage {
     switch (this) {
       case VoiceErrorType.noSpeechDetected:
-        return 'لم يتم سماعك بوضوح، حاول التحدث في مكان أهدأ وبصوت أعلى قليلاً';
+        return 'لم يتم سماع صوت واضح. حاول مرة أخرى في مكان أكثر هدوءاً.';
       case VoiceErrorType.audioHardware:
-        return 'تعذّر الوصول إلى الميكروفون، تأكد أنه غير مستخدم في تطبيق آخر وأنه متصل بشكل صحيح';
+        return 'تعذر استخدام الميكروفون. تحقق من اتصاله وأغلق التطبيقات الأخرى التي تستخدمه.';
       case VoiceErrorType.permissionDenied:
-        return 'صلاحية الميكروفون مرفوضة، فعّلها من إعدادات الجهاز';
+        return 'صلاحية الميكروفون غير متاحة. فعّلها من إعدادات التطبيق.';
       case VoiceErrorType.network:
-        return 'تعذّر الاتصال بالسيرفر لتحويل الصوت، تحقق من الإنترنت';
+        return 'تعذر الوصول إلى خدمة التعرف الصوتي. تحقق من الاتصال وحاول مجدداً.';
       case VoiceErrorType.busy:
-        return 'المحرك الصوتي مشغول، حاول مرة أخرى خلال لحظات';
+        return 'محرك التعرف الصوتي مشغول حالياً. انتظر لحظة ثم أعد المحاولة.';
       case VoiceErrorType.languageUnavailable:
-        return 'اللهجة العربية غير مدعومة على هذا الجهاز، فعّل خدمات Google للتعرف الصوتي';
+        return 'التعرف الصوتي باللغة العربية غير متاح على هذا الجهاز.';
       case VoiceErrorType.unknown:
-        return 'حدث خطأ غير متوقع في التعرف الصوتي، حاول مرة أخرى';
+        return 'تعذر إكمال التعرف الصوتي. يمكنك إدخال الدرجة يدوياً.';
     }
   }
 }
 
-/// تصنيف رسالة خطأ speech_to_text الخام (مثل error_no_match، error_busy...)
-/// إلى نوع مفهوم يمكن للواجهة التعامل معه برسالة عربية مناسبة.
-/// دالة top-level (وليست method) عمداً كي يسهل اختبارها مباشرة بدون
-/// الحاجة لإنشاء VoiceService حقيقي (الذي يعتمد على plugins منصّة).
-///
-/// ملاحظة: على أندرويد كل الأخطاء تصل بعلامة permanent=true من الـ plugin
-/// نفسه (وليس من نظام التشغيل)، لذا لا نعتمد على permanent لتفسير الخطورة
-/// بل على errorMsg النصي مباشرة.
-VoiceErrorType classifyVoiceError(String errorMsg) {
-  switch (errorMsg) {
+VoiceErrorType classifyVoiceError(String rawCode) {
+  final code = rawCode.trim().toLowerCase();
+  switch (code) {
     case 'error_no_match':
     case 'error_speech_timeout':
-      // غالباً بسبب ضوضاء عالية تُغرق الصوت، أو صمت تام، أو نطق غير واضح
       return VoiceErrorType.noSpeechDetected;
     case 'error_audio_error':
     case 'error_client':
-      // مشكلة في التقاط الصوت من الهاردوير — غالباً انقطاع/عطل الميكروفون
       return VoiceErrorType.audioHardware;
     case 'error_permission':
+    case 'error_permission_denied':
       return VoiceErrorType.permissionDenied;
     case 'error_network':
     case 'error_network_timeout':
@@ -114,12 +82,10 @@ class VoiceService {
   String? _currentRecordingPath;
   bool _isRecording = false;
   bool _isPaused = false;
-  bool _disposed = false; // حماية من race condition بعد dispose
 
   // Safety timeout timer — stored so it can be cancelled if needed
   Timer? _safetyTimer;
-  // الـ Completer النشط — يُلغى فوراً عند dispose لمنع تعليق المستدعي
-  Completer<String>? _activeCompleter;
+  Completer<String>? _activeListenCompleter;
 
   // Streaming partials for continuous mode
   StreamController<String>? _partialController;
@@ -131,60 +97,19 @@ class VoiceService {
   bool get speechAvailable => _speechAvailable;
   bool get isInitialized => _initialized;
 
-  // آخر خطأ صوتي مُصنَّف — يمكن لواجهة المستخدم قراءته بعد initSpeech()
-  // أو أثناء الاستماع لعرض رسالة عربية مناسبة (ضوضاء عالية / انقطاع الميكروفون...).
-  VoiceErrorType? _lastErrorType;
-  VoiceErrorType? get lastErrorType => _lastErrorType;
+  Future<bool> requestPermissions() async {
+    return await requestMicrophoneAccess() == MicPermissionResult.granted;
+  }
 
-  // استدعاء اختياري تُبلَّغ به الواجهة فور وقوع خطأ أثناء التعرف الصوتي
-  // (مفيد لعرض SnackBar/Toast فوري بدل انتظار نهاية الجلسة).
-  void Function(VoiceErrorType type, String rawMessage)? onVoiceError;
-
-  /// طلب صلاحية الميكروفون مع تمييز دقيق بين:
-  /// - granted: مُنحت الصلاحية
-  /// - denied: رُفضت لكن يمكن إعادة الطلب لاحقاً
-  /// - permanentlyDenied: رُفضت نهائياً (المستخدم اختار "عدم السؤال مجدداً")
-  ///   ولا يمكن إعادة الطلب برمجياً — يجب توجيه المستخدم لإعدادات النظام
-  ///   عبر openAppSettings().
-  /// - restricted/limited: قيود على مستوى النظام (نادر على أندرويد، أكثر شيوعاً على iOS)
-  Future<MicPermissionResult> requestMicPermission() async {
-    var status = await Permission.microphone.status;
-    if (status.isGranted) return MicPermissionResult.granted;
-
-    // لا تطلب مجدداً إذا كانت مرفوضة نهائياً — iOS/Android يتجاهلان الطلب
-    // في هذه الحالة، والطلب المتكرر قد يُخفي حالة "مرفوض دائماً" الحقيقية.
-    if (status.isPermanentlyDenied) {
-      return MicPermissionResult.permanentlyDenied;
-    }
-
-    status = await Permission.microphone.request();
-    if (status.isGranted) return MicPermissionResult.granted;
-    if (status.isPermanentlyDenied) {
-      return MicPermissionResult.permanentlyDenied;
-    }
-    if (status.isRestricted || status.isLimited) {
-      return MicPermissionResult.restricted;
-    }
+  Future<MicPermissionResult> requestMicrophoneAccess() async {
+    final mic = await Permission.microphone.request();
+    if (mic.isGranted) return MicPermissionResult.granted;
+    if (mic.isRestricted) return MicPermissionResult.restricted;
+    if (mic.isPermanentlyDenied) return MicPermissionResult.permanentlyDenied;
     return MicPermissionResult.denied;
   }
 
-  /// دالة توافقية قديمة (bool فقط) — أُبقيت لعدم كسر أي استدعاء قديم،
-  /// لكن يُفضّل استخدام requestMicPermission() للحصول على تفاصيل أدق.
-  Future<bool> requestPermissions() async {
-    final result = await requestMicPermission();
-    return result == MicPermissionResult.granted;
-  }
-
-  /// فتح إعدادات النظام مباشرة لتمكين المستخدم من منح صلاحية الميكروفون
-  /// يدوياً بعد الرفض الدائم (permanentlyDenied).
-  Future<bool> openSystemSettings() async {
-    try {
-      return await openAppSettings();
-    } catch (e, st) {
-      ErrorHandler.logError(e, st, 'VoiceService.openSystemSettings');
-      return false;
-    }
-  }
+  Future<bool> openPermissionSettings() => openAppSettings();
 
   /// Initialize the speech recognizer once. Subsequent calls are no-ops.
   /// يُجرّب ar_EG أولاً ثم ar_SA ثم ar كـ fallback.
@@ -198,26 +123,15 @@ class VoiceService {
             _isListening = false;
           }
         },
-        onError: (SpeechRecognitionError e) {
-          // لا تنهار على أخطاء عابرة، لكن صنّف الخطأ وأبلغ الواجهة به
-          // حتى تعرض رسالة عربية دقيقة (ضوضاء/انقطاع ميكروفون/صلاحيات...).
+        onError: (e) {
           _isListening = false;
-          _lastErrorType = classifyVoiceError(e.errorMsg);
-          try {
-            onVoiceError?.call(_lastErrorType!, e.errorMsg);
-          } catch (_) {
-            // تجاهل أي خطأ من الـ callback الخارجي كي لا يُسقط الخدمة
+          final active = _activeListenCompleter;
+          if (active != null && !active.isCompleted) {
+            active.completeError(classifyVoiceError(e.errorMsg).arabicMessage);
           }
-          // أنهِ أي جلسة استماع نشطة فوراً بدل الانتظار حتى safety timeout —
-          // هذا يجعل الواجهة تستجيب مباشرة (خصوصاً في حالة انقطاع الميكروفون
-          // أو ضوضاء عالية جداً بدل تجميد الشاشة لثوانٍ إضافية بلا داعٍ).
+          _activeListenCompleter = null;
           _safetyTimer?.cancel();
           _safetyTimer = null;
-          if (_activeCompleter != null && !_activeCompleter!.isCompleted) {
-            final c = _activeCompleter!;
-            _activeCompleter = null;
-            c.complete('');
-          }
         },
         debugLogging: false,
       );
@@ -259,14 +173,20 @@ class VoiceService {
     Duration pauseFor = const Duration(seconds: 3),
     void Function(String partial)? onPartial,
   }) async {
-    // حماية: لا تبدأ إذا تمّ dispose بالفعل
-    if (_disposed) return '';
     if (!_speechAvailable) {
       final ok = await initSpeech();
       if (!ok) throw 'التعرف الصوتي غير متاح على هذا الجهاز';
     }
 
-    // Make sure no previous session is still alive
+    // Complete an orphaned session before replacing its safety timer. Some
+    // platform implementations emit notListening without a final result.
+    final previousCompleter = _activeListenCompleter;
+    if (previousCompleter != null && !previousCompleter.isCompleted) {
+      previousCompleter.complete('');
+    }
+    _activeListenCompleter = null;
+
+    // Make sure no previous platform session is still alive.
     if (_isListening) {
       try {
         await _speech.stop();
@@ -286,7 +206,7 @@ class VoiceService {
     final effectiveLocale = localeId ?? await _bestArabicLocale();
 
     final completer = Completer<String>();
-    _activeCompleter = completer;
+    _activeListenCompleter = completer;
     String finalText = '';
 
     void completeOnce(String txt) {
@@ -294,7 +214,9 @@ class VoiceService {
         _isListening = false;
         _safetyTimer?.cancel();
         _safetyTimer = null;
-        _activeCompleter = null;
+        if (_activeListenCompleter == completer) {
+          _activeListenCompleter = null;
+        }
         completer.complete(txt);
       }
     }
@@ -310,18 +232,21 @@ class VoiceService {
           }
         },
         listenOptions: stt.SpeechListenOptions(
-          localeId: effectiveLocale,
-          listenFor: listenFor,
-          pauseFor: pauseFor,
           partialResults: true,
           cancelOnError: true,
           listenMode: stt.ListenMode.dictation,
+          localeId: effectiveLocale,
+          listenFor: listenFor,
+          pauseFor: pauseFor,
         ),
       );
     } catch (e) {
       _isListening = false;
       _safetyTimer?.cancel();
       _safetyTimer = null;
+      if (_activeListenCompleter == completer) {
+        _activeListenCompleter = null;
+      }
       if (!completer.isCompleted) completer.completeError(e.toString());
       return completer.future;
     }
@@ -342,6 +267,8 @@ class VoiceService {
   }
 
   Future<void> stopListening() async {
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     if (_isListening) {
       try {
         await _speech.stop();
@@ -350,6 +277,11 @@ class VoiceService {
       }
       _isListening = false;
     }
+    final active = _activeListenCompleter;
+    if (active != null && !active.isCompleted) {
+      active.complete('');
+    }
+    _activeListenCompleter = null;
   }
 
   Future<void> cancelListening() async {
@@ -365,6 +297,11 @@ class VoiceService {
       }
       _isListening = false;
     }
+    final active = _activeListenCompleter;
+    if (active != null && !active.isCompleted) {
+      active.complete('');
+    }
+    _activeListenCompleter = null;
     // also clean up any continuous streams
     await _partialController?.close();
     _partialController = null;
@@ -372,15 +309,13 @@ class VoiceService {
 
   // ============ File Recording (for server-side Whisper) ============
   Future<String> startRecording() async {
+    if (_isRecording) {
+      throw StateError('An audio recording is already active.');
+    }
     if (!await _recorder.hasPermission()) {
-      // تحقّق من حالة الصلاحية الدقيقة لإعطاء المستخدم رسالة قابلة للتصرف
-      final status = await Permission.microphone.status;
-      if (status.isPermanentlyDenied) {
-        throw 'صلاحية الميكروفون مرفوضة نهائياً، افتح إعدادات التطبيق لتفعيلها';
-      }
       throw 'صلاحية الميكروفون مرفوضة';
     }
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getTemporaryDirectory();
     final path = p.join(
       dir.path,
       'rec_${DateTime.now().millisecondsSinceEpoch}.m4a',
@@ -429,15 +364,9 @@ class VoiceService {
   }
 
   Future<void> dispose() async {
-    _disposed = true;
     // ألغِ الـ timer أولاً قبل أي عملية أخرى
     _safetyTimer?.cancel();
     _safetyTimer = null;
-    // أكمل أي completer معلّق لمنع تعليق المستدعي إلى الأبد
-    if (_activeCompleter != null && !_activeCompleter!.isCompleted) {
-      _activeCompleter!.complete('');
-      _activeCompleter = null;
-    }
     try {
       await cancelListening();
     } catch (e, st) {

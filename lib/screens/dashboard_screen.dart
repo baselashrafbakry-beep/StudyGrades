@@ -6,7 +6,6 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../providers/grading_provider.dart';
 import '../models/student_model.dart';
 import '../services/analytics_service.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 /// لوحة تحكم تحليلية متقدمة - Dashboard with Charts
@@ -27,16 +26,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _touchedBarIndex = -1;
 
-  Future<void> _handleRefresh() async {
-    // إعادة حساب الإحصاءات (البيانات تأتي من Provider)
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final grading = context.watch<GradingProvider>();
     final students = grading.students;
     final fields = grading.fields;
@@ -51,30 +42,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: students.isEmpty
                   ? _emptyState()
-                  : RefreshIndicator(
-                      onRefresh: _handleRefresh,
-                      color: AppColors.primary,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 80),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _buildSummaryCards(stats),
-                            const SizedBox(height: 18),
-                            _buildCompletionCard(stats),
-                            const SizedBox(height: 18),
-                            _buildGradeDistribution(students, stats),
-                            const SizedBox(height: 18),
-                            _buildTopStudentsCard(students, fields, stats),
-                            const SizedBox(height: 18),
-                            _buildFieldAnalysisCard(students, fields),
-                            const SizedBox(height: 18),
-                            _buildPassFailPie(students, stats),
-                            const SizedBox(height: 10),
-                            _buildFooterNote(students.length),
-                          ],
-                        ),
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 80),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildSummaryCards(stats),
+                          const SizedBox(height: 18),
+                          _buildCompletionCard(stats),
+                          const SizedBox(height: 18),
+                          _buildGradeDistribution(students, fields, stats),
+                          const SizedBox(height: 18),
+                          _buildTopStudentsCard(students, fields, stats),
+                          const SizedBox(height: 18),
+                          _buildFieldAnalysisCard(students, fields),
+                          const SizedBox(height: 18),
+                          _buildPassFailPie(students, fields, stats),
+                        ],
                       ),
                     ),
             ),
@@ -136,70 +120,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 110,
-            height: 110,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.08),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.analytics_outlined,
-              size: 56,
-              color: AppColors.primary.withValues(alpha: 0.45),
-            ),
-          ),
-          const SizedBox(height: 20),
+          Icon(Icons.analytics_outlined, size: 80, color: Colors.grey.shade400),
+          const SizedBox(height: 14),
           Text(
-            'لا توجد بيانات بعد',
+            'لا توجد بيانات لعرضها',
             style: GoogleFonts.cairo(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'أدخل درجات الطلاب أولاً\nثم ستظهر التحليلات هنا',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.cairo(
-              fontSize: 13,
+              fontSize: 16,
               color: AppColors.textSecondary,
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-            label: Text(
-              'العودة للرصد',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFooterNote(int total) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        'التحليلات مبنية على $total طالب • اسحب للأسفل للتحديث',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.cairo(
-          fontSize: 11,
-          color: AppColors.textHint,
-        ),
       ),
     );
   }
@@ -245,7 +175,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -304,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -347,8 +277,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               colors: pct >= 0.7
                   ? [AppColors.success, const Color(0xFF2E7D32)]
                   : pct >= 0.4
-                      ? [AppColors.warning, const Color(0xFFEF6C00)]
-                      : [AppColors.error, const Color(0xFFB71C1C)],
+                  ? [AppColors.warning, const Color(0xFFEF6C00)]
+                  : [AppColors.error, const Color(0xFFB71C1C)],
             ),
             center: Column(
               mainAxisSize: MainAxisSize.min,
@@ -395,10 +325,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
         Text(
@@ -412,15 +339,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildGradeDistribution(List<Student> students, ClassStats stats) {
+  Widget _buildGradeDistribution(
+    List<Student> students,
+    List<GradeField> fields,
+    ClassStats stats,
+  ) {
     if (stats.totalPossible == 0) return const SizedBox();
 
     // Distribution buckets: 0-25%, 25-50%, 50-75%, 75-100%
     final buckets = List.filled(4, 0);
     for (final s in students) {
       if (s.grades.isEmpty) continue;
-      // clamp لضمان pct بين 0 و 100 (حماية من قيم سالبة أو أكبر من 100)
-      final pct = ((s.total / stats.totalPossible) * 100).clamp(0.0, 100.0);
+      final pct = (s.totalFor(fields) / stats.totalPossible) * 100;
       if (pct < 25) {
         buckets[0]++;
       } else if (pct < 50) {
@@ -428,7 +358,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else if (pct < 75) {
         buckets[2]++;
       } else {
-        // 75% → 100% (يشمل 100% بشكل صريح)
         buckets[3]++;
       }
     }
@@ -448,7 +377,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -573,10 +502,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   show: true,
                   drawVerticalLine: false,
                   horizontalInterval: chartMax > 5 ? (chartMax / 5) : 1,
-                  getDrawingHorizontalLine: (_) => FlLine(
-                    color: Colors.grey.shade200,
-                    strokeWidth: 1,
-                  ),
+                  getDrawingHorizontalLine: (_) =>
+                      FlLine(color: Colors.grey.shade200, strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
                 barGroups: List.generate(buckets.length, (i) {
@@ -587,10 +514,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       BarChartRodData(
                         toY: buckets[i].toDouble(),
                         gradient: LinearGradient(
-                          colors: [
-                            colors[i],
-                            colors[i].withValues(alpha: 0.6),
-                          ],
+                          colors: [colors[i], colors[i].withValues(alpha: 0.6)],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                         ),
@@ -620,13 +544,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<GradeField> fields,
     ClassStats stats,
   ) {
-    final sorted = [...students]..sort((a, b) => b.total.compareTo(a.total));
+    // إصلاح: استثناء الطلاب الذين لم تُسجَّل لهم أي درجة بعد من الترتيب،
+    // وإلا تظهر "أفضل 5 طلاب" وهي تضم طلاباً بصفر درجة فعلياً لمجرد
+    // اكتمال العدد، وهو أمر مربك جداً أثناء تصحيح الدرجات جزئياً.
+    final graded = students.where((s) => s.grades.isNotEmpty).toList();
+    final sorted = [...graded]
+      ..sort((a, b) => b.totalFor(fields).compareTo(a.totalFor(fields)));
     final top5 = sorted.take(5).toList();
+
+    if (top5.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Center(
+          child: Text(
+            'لم تُسجَّل درجات بعد لعرض الترتيب',
+            style: GoogleFonts.cairo(color: AppColors.textHint),
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -660,8 +605,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 12),
           ...List.generate(top5.length, (i) {
             final s = top5[i];
+            final studentTotal = s.totalFor(fields);
             final pct = stats.totalPossible > 0
-                ? (s.total / stats.totalPossible) * 100
+                ? (studentTotal / stats.totalPossible) * 100
                 : 0.0;
             final medalColors = [
               const Color(0xFFFFD700), // gold
@@ -725,8 +671,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           progressColor: pct >= 70
                               ? AppColors.success
                               : pct >= 50
-                                  ? AppColors.warning
-                                  : AppColors.error,
+                              ? AppColors.warning
+                              : AppColors.error,
                           barRadius: const Radius.circular(3),
                         ),
                       ],
@@ -737,7 +683,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        _fmt(s.total),
+                        _fmt(studentTotal),
                         style: GoogleFonts.cairo(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -771,7 +717,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -819,8 +765,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final color = pct >= 0.7
                 ? AppColors.success
                 : pct >= 0.5
-                    ? AppColors.warning
-                    : AppColors.error;
+                ? AppColors.warning
+                : AppColors.error;
 
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -877,16 +823,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildPassFailPie(List<Student> students, ClassStats stats) {
+  Widget _buildPassFailPie(
+    List<Student> students,
+    List<GradeField> fields,
+    ClassStats stats,
+  ) {
     if (stats.totalPossible == 0) return const SizedBox();
 
     final passed = students
         .where(
-            (s) => s.grades.isNotEmpty && s.total >= stats.totalPossible * 0.5)
+          (s) =>
+              s.grades.isNotEmpty &&
+              s.totalFor(fields) >= stats.totalPossible * 0.5,
+        )
         .length;
     final failed = students
         .where(
-            (s) => s.grades.isNotEmpty && s.total < stats.totalPossible * 0.5)
+          (s) =>
+              s.grades.isNotEmpty &&
+              s.totalFor(fields) < stats.totalPossible * 0.5,
+        )
         .length;
     final notGraded = students.length - passed - failed;
 
@@ -894,7 +850,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.cardBackground,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Center(
@@ -909,7 +865,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(

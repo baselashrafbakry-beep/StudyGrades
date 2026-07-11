@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/grading_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/upgrade_required_dialog.dart';
 import 'grading_screen.dart';
 
 class SubjectSelectionScreen extends StatefulWidget {
@@ -21,6 +20,8 @@ class SubjectSelectionScreen extends StatefulWidget {
 }
 
 class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
+  int _termId = 1;
+  int _weekNumber = 1;
   final List<_SubjectOption> _subjects = const [
     _SubjectOption('General', 'عام', Icons.book_outlined, Color(0xFF1976D2)),
     _SubjectOption(
@@ -74,6 +75,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
     if (_isLoading) return; // منع الضغط المزدوج
     setState(() => _isLoading = true);
     final grading = context.read<GradingProvider>();
+    grading.setAcademicPeriod(termId: _termId, weekNumber: _weekNumber);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -93,37 +95,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
     if (!mounted) return;
     Navigator.of(context).pop();
 
-    // فرض حد عدد الفصول (maxClassesPerTeacher): تم رفض فتح هذا الفصل
-    // لأنه فصل جديد يتجاوز حد الباقة الحالية.
-    if (grading.classLimitExceeded) {
-      await UpgradeRequiredDialog.show(
-        context,
-        featureNameAr: 'فتح فصول دراسية إضافية',
-        requiredPlanAr: 'أعلى',
-        icon: Icons.class_rounded,
-        customMessage:
-            'لقد وصلت للحد الأقصى لعدد الفصول الدراسية المسموح بها في'
-            ' باقتك الحالية.\nقم بالترقية لفتح فصول إضافية دون قيود.',
-      );
-      return;
-    }
-
     if (grading.classroom != null && grading.classroom!.students.isNotEmpty) {
-      // تنبيه غير حاجب عند قصّ قائمة الطلاب بسبب حد maxStudentsPerClass
-      if (grading.trimmedStudentsCount > 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.warning,
-            behavior: SnackBarBehavior.floating,
-            content: Text(
-              'باقتك الحالية تدعم عدداً محدوداً من الطلاب — تم استبعاد '
-              '${grading.trimmedStudentsCount} طالب. قم بالترقية لعرض الكل.',
-              style: GoogleFonts.cairo(fontSize: 13),
-            ),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => GradingScreen(
@@ -155,8 +127,10 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
+    context
+        .watch<
+          ThemeProvider
+        >(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -234,6 +208,8 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _buildPeriodSelector(),
+                    const SizedBox(height: 20),
                     Text(
                       'المواد الدراسية',
                       style: GoogleFonts.cairo(
@@ -249,11 +225,11 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 1.05,
-                      ),
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 1.05,
+                          ),
                       itemCount: _subjects.length,
                       itemBuilder: (_, i) {
                         final s = _subjects[i];
@@ -358,6 +334,68 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'الفترة الدراسية',
+            textAlign: TextAlign.right,
+            style: GoogleFonts.cairo(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 1,
+                label: Text('الفصل الأول'),
+                icon: Icon(Icons.looks_one_rounded),
+              ),
+              ButtonSegment(
+                value: 2,
+                label: Text('الفصل الثاني'),
+                icon: Icon(Icons.looks_two_rounded),
+              ),
+            ],
+            selected: {_termId},
+            onSelectionChanged: (selection) {
+              setState(() => _termId = selection.first);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _weekNumber,
+            decoration: const InputDecoration(
+              labelText: 'الأسبوع',
+              prefixIcon: Icon(Icons.calendar_view_week_rounded),
+            ),
+            items: List.generate(
+              18,
+              (index) => DropdownMenuItem(
+                value: index + 1,
+                child: Text('الأسبوع ${index + 1}'),
+              ),
+            ),
+            onChanged: (value) {
+              if (value != null) setState(() => _weekNumber = value);
+            },
+          ),
+        ],
       ),
     );
   }

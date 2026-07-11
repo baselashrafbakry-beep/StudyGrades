@@ -6,14 +6,6 @@ class AppColors {
   // يتم تحديثها من ThemeProvider عند كل تغيير للسمة (فاتح/داكن/تلقائي)
   // هذا يسمح بتفعيل الوضع الليلي في كل الشاشات دون الحاجة لتعديل
   // كل شاشة على حدة لاستخدام Theme.of(context) بشكل صريح.
-  static bool _isDark = false;
-
-  static void updateBrightness(bool isDark) {
-    _isDark = isDark;
-  }
-
-  static bool get isDarkMode => _isDark;
-
   // ==== ألوان العلامة التجارية (ثابتة في كلا الوضعين) ====
   static const Color primary = Color(0xFF1976D2);
   static const Color primaryDark = Color(0xFF0D47A1);
@@ -21,18 +13,9 @@ class AppColors {
   static const Color accent = Color(0xFF00C853);
 
   // ==== ألوان الخلفيات والأسطح (تتغيّر حسب الوضع) ====
-  static const Color _lightBackground = Color(0xFFF5F7FA);
-  static const Color _darkBackground = Color(0xFF121212);
-  static Color get background => _isDark ? _darkBackground : _lightBackground;
-
-  static const Color _lightSurface = Colors.white;
-  static const Color _darkSurface = Color(0xFF1E1E1E);
-  static Color get surface => _isDark ? _darkSurface : _lightSurface;
-
-  static const Color _lightCardBackground = Colors.white;
-  static const Color _darkCardBackground = Color(0xFF2A2A2A);
-  static Color get cardBackground =>
-      _isDark ? _darkCardBackground : _lightCardBackground;
+  static const Color background = Color(0xFFF5F7FA);
+  static const Color surface = Colors.white;
+  static const Color cardBackground = Colors.white;
 
   static const Color success = Color(0xFF4CAF50);
   static const Color warning = Color(0xFFFFA726);
@@ -40,19 +23,9 @@ class AppColors {
   static const Color info = Color(0xFF29B6F6);
 
   // ==== ألوان النصوص (تتغيّر حسب الوضع) ====
-  static const Color _lightTextPrimary = Color(0xFF1A237E);
-  static const Color _darkTextPrimary = Colors.white;
-  static Color get textPrimary =>
-      _isDark ? _darkTextPrimary : _lightTextPrimary;
-
-  static const Color _lightTextSecondary = Color(0xFF546E7A);
-  static const Color _darkTextSecondary = Colors.white70;
-  static Color get textSecondary =>
-      _isDark ? _darkTextSecondary : _lightTextSecondary;
-
-  static const Color _lightTextHint = Color(0xFF90A4AE);
-  static const Color _darkTextHint = Colors.white38;
-  static Color get textHint => _isDark ? _darkTextHint : _lightTextHint;
+  static const Color textPrimary = Color(0xFF1A237E);
+  static const Color textSecondary = Color(0xFF546E7A);
+  static const Color textHint = Color(0xFF90A4AE);
 
   static const Color recordingActive = Color(0xFFE53935);
   static const Color recordingPaused = Color(0xFFFFA726);
@@ -103,9 +76,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: AppColors.cardBackground,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -165,10 +136,9 @@ class AppTheme {
         surface: darkSurface,
       ),
       scaffoldBackgroundColor: darkBg,
-      textTheme: GoogleFonts.cairoTextTheme(base.textTheme).apply(
-        bodyColor: Colors.white,
-        displayColor: Colors.white,
-      ),
+      textTheme: GoogleFonts.cairoTextTheme(
+        base.textTheme,
+      ).apply(bodyColor: Colors.white, displayColor: Colors.white),
       appBarTheme: AppBarTheme(
         backgroundColor: darkSurface,
         foregroundColor: Colors.white,
@@ -182,9 +152,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: darkCard,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

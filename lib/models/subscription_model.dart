@@ -1,292 +1,465 @@
-// نموذج نظام الاشتراكات - StudyGrades
-// المطور: م. باسل أشرف
-
-enum SubscriptionPlan {
-  free, // مجاني - محدود
-  basic, // أساسي - شهري
-  pro, // احترافي - شهري
-  school, // مدرسة - سنوي
-}
-
-class SubscriptionPlanInfo {
-  final SubscriptionPlan plan;
-  final String nameAr;
-  final String nameEn;
-  final String description;
-  final double priceMonthly; // بالجنيه المصري
-  final double priceYearly; // بالجنيه المصري
-  final int maxTeachers; // -1 = غير محدود
-  final int maxStudentsPerClass;
-  final int maxClassesPerTeacher;
-  final bool voiceInput;
-  final bool offlineSync;
-  final bool analytics;
-  final bool exportExcel;
-  final bool exportCsv;
-  final bool adminPanel;
-  final bool prioritySupport;
-  final String badge;
-  final String colorHex;
-  // ==========================================================================
-  // 🆕 حقل "حد الأجهزة" (Device Limit) — أُضيف بناءً على ملف الإعداد التجاري
-  // الرسمي (StudyGrades-commercial.env): STARTER_DEVICE_LIMIT=1،
-  // PROFESSIONAL_DEVICE_LIMIT=2. هذا الحقل يمثّل عدد الأجهزة المسموح
-  // للمشترك الفردي (Starter/Professional) استخدام اشتراكه عليها في آنٍ واحد.
-  //
-  // ⚠️ ملاحظة معمارية هامة وصادقة (Honest Limitation): نظام التفعيل الحالي
-  // بالكامل offline ويعمل عبر تراخيص RSA-2048 موقَّعة *لكل جهاز على حدة*
-  // (انظر SubscriptionService._tryParsePersonalizedCode) — لا يوجد أي مفهوم
-  // "حساب عميل" منفصل عن "معرّف الجهاز" يمكن للتطبيق التحقق منه محلياً لعدّ
-  // كم جهازاً يستخدمه هذا العميل فعلياً. لذلك:
-  //   • خطة Starter (حد=1): محقَّقة بطبيعة النظام تلقائياً، لأن كل كود
-  //     SGV2-... مربوط بجهاز واحد فقط عند توليده.
-  //   • خطة Professional (حد=2): تُطبَّق حالياً على مستوى *سياسة التوليد*
-  //     الخارجية (يُصدِر المطوّر عبر license_generator_screen/
-  //     generate_license.py كودين منفصلين، كل منهما لجهاز مختلف، لنفس
-  //     العميل عند الطلب) — وليس عبر فحص برمجي داخل هذا التطبيق.
-  //   • أي إنفاذ مركزي حقيقي (مثال: منع تفعيل جهاز ثالث تلقائياً) يتطلب
-  //     نظام حسابات على الباك-إند (Django) لا وجود له في هذا المستودع بعد.
-  // هذا الحقل هنا إذن هو "شفافية للمستخدم في واجهة الأسعار" بشكل صادق ودقيق،
-  // وليس ادّعاءً بوجود إنفاذ تقني كامل غير موجود فعلياً.
-  // ==========================================================================
-  final int maxDevices; // -1 = غير محدود (لا ينطبق على خطة المدرسة تحديداً)
-
-  const SubscriptionPlanInfo({
-    required this.plan,
-    required this.nameAr,
-    required this.nameEn,
-    required this.description,
-    required this.priceMonthly,
-    required this.priceYearly,
-    required this.maxTeachers,
-    required this.maxStudentsPerClass,
-    required this.maxClassesPerTeacher,
-    required this.voiceInput,
-    required this.offlineSync,
-    required this.analytics,
-    required this.exportExcel,
-    required this.exportCsv,
-    required this.adminPanel,
-    required this.prioritySupport,
-    required this.badge,
-    required this.colorHex,
-    required this.maxDevices,
-  });
-
-  bool get isUnlimitedTeachers => maxTeachers == -1;
-  bool get isUnlimitedStudents => maxStudentsPerClass == -1;
-  bool get isUnlimitedClasses => maxClassesPerTeacher == -1;
-  bool get isUnlimitedDevices => maxDevices == -1;
-
-  String get priceMonthlyFormatted {
-    if (priceMonthly == 0) return 'مجاني';
-    return '${priceMonthly.toInt()} جنيه/شهر';
-  }
-
-  String get priceYearlyFormatted {
-    if (priceYearly == 0) return 'مجاني';
-    return '${priceYearly.toInt()} جنيه/سنة';
-  }
-
-  double get yearlyDiscount {
-    if (priceMonthly == 0) return 0;
-    final fullYear = priceMonthly * 12;
-    return ((fullYear - priceYearly) / fullYear) * 100;
-  }
-}
-
-/// خطط الاشتراك المتاحة
+/// Commercial subscription and entitlement model for StudyGrades.
 ///
-/// ⚠️⚠️⚠️ مصدر الحقيقة الوحيد للأسعار (Single Source of Truth) ⚠️⚠️⚠️
-/// جميع أسعار وحدود هذا الملف مأخوذة **حصراً وحرفياً** من ملف الإعداد
-/// التجاري الرسمي المُقدَّم من المطوّر/صاحب المنتج:
-///   /home/user/secrets/StudyGrades-commercial.env
-/// (تم نقله خارج مستودع git لحماية أسرار الدفع الحية المرفقة فيه، لكن
-/// القيم غير السرّية — الأسعار والحدود — منقولة هنا حرفياً بأمر صريح من
-/// صاحب المنتج: "خذ الاسعار فقط من الملف المرفق").
-///
-/// أي تعديل مستقبلي على الأسعار يجب أن يأتي فقط من نسخة محدَّثة رسمياً من
-/// ذلك الملف، وليس تخميناً أو قيمة افتراضية يضعها أي مطوّر لاحقاً.
-///
-/// جدول المطابقة (env → enum الحالي في الكود، بدون تغيير اسم الـ enum
-/// نفسه تفادياً لكسر مزامنة السيرفر القائمة على .name — انظر التوثيق
-/// الكامل في subscription_service.dart):
-///   STARTER_MONTHLY_PRICE=30      / STARTER_ANNUAL_PRICE=300      → basic
-///   PROFESSIONAL_MONTHLY_PRICE=60 / PROFESSIONAL_ANNUAL_PRICE=600 → pro
-///   SCHOOL_MONTHLY_PRICE=700      / SCHOOL_ANNUAL_PRICE=8200      → school
-///   STARTER_DEVICE_LIMIT=1        → basic.maxDevices
-///   PROFESSIONAL_DEVICE_LIMIT=2   → pro.maxDevices
-///   SCHOOL_SEAT_LIMIT=25          → school.maxTeachers (كان -1/غير محدود،
-///                                   أصبح حداً ثابتاً 25 بأمر الملف الرسمي)
-class SubscriptionPlans {
-  static const List<SubscriptionPlanInfo> all = [
-    SubscriptionPlanInfo(
-      plan: SubscriptionPlan.free,
-      nameAr: 'مجاني',
-      nameEn: 'Free',
-      description: 'ابدأ مجاناً وجرب الميزات الأساسية',
-      priceMonthly: 0,
-      priceYearly: 0,
-      maxTeachers: 1,
-      maxStudentsPerClass: 30,
-      maxClassesPerTeacher: 2,
-      voiceInput: true,
-      offlineSync: false,
-      analytics: false,
-      exportExcel: false,
-      exportCsv: false,
-      adminPanel: false,
-      prioritySupport: false,
-      badge: '🆓',
-      colorHex: '#607D8B',
-      maxDevices: 1,
-    ),
-    // Starter — 30 جنيه/شهر، 300 جنيه/سنة، حد جهاز واحد (STARTER_DEVICE_LIMIT=1)
-    SubscriptionPlanInfo(
-      plan: SubscriptionPlan.basic,
-      nameAr: 'ستارتر',
-      nameEn: 'Starter',
-      description: 'للمعلم الفرد مع ميزات متقدمة',
-      priceMonthly: 30,
-      priceYearly: 300,
-      maxTeachers: 1,
-      maxStudentsPerClass: 50,
-      maxClassesPerTeacher: 5,
-      voiceInput: true,
-      offlineSync: true,
-      analytics: true,
-      exportExcel: false,
-      exportCsv: true,
-      adminPanel: false,
-      prioritySupport: false,
-      badge: '⭐',
-      colorHex: '#1976D2',
-      maxDevices: 1,
-    ),
-    // Professional — 60 جنيه/شهر، 600 جنيه/سنة، حد جهازين (PROFESSIONAL_DEVICE_LIMIT=2)
-    SubscriptionPlanInfo(
-      plan: SubscriptionPlan.pro,
-      nameAr: 'احترافي',
-      nameEn: 'Professional',
-      description: 'للمعلم المحترف بجميع الميزات',
-      priceMonthly: 60,
-      priceYearly: 600,
-      maxTeachers: 1,
-      maxStudentsPerClass: -1,
-      maxClassesPerTeacher: -1,
-      voiceInput: true,
-      offlineSync: true,
-      analytics: true,
-      exportExcel: true,
-      exportCsv: true,
-      adminPanel: false,
-      prioritySupport: true,
-      badge: '💎',
-      colorHex: '#7B1FA2',
-      maxDevices: 2,
-    ),
-    // School — 700 جنيه/شهر، 8200 جنيه/سنة، حد 25 مقعد معلم (SCHOOL_SEAT_LIMIT=25)
-    SubscriptionPlanInfo(
-      plan: SubscriptionPlan.school,
-      nameAr: 'مدرسة',
-      nameEn: 'School',
-      description: 'للمدارس والمؤسسات التعليمية',
-      priceMonthly: 700,
-      priceYearly: 8200,
-      maxTeachers: 25,
-      maxStudentsPerClass: -1,
-      maxClassesPerTeacher: -1,
-      voiceInput: true,
-      offlineSync: true,
-      analytics: true,
-      exportExcel: true,
-      exportCsv: true,
-      adminPanel: true,
-      prioritySupport: true,
-      badge: '🏫',
-      colorHex: '#2E7D32',
-      maxDevices:
-          -1, // غير محدود على مستوى الجهاز؛ الضبط الفعلي عبر مقاعد المعلمين (25)
-    ),
+/// The mobile app does not process payments locally. It consumes subscription
+/// fields returned by the backend and enforces the matching product limits.
+class SubscriptionPlan {
+  static const String legacy = 'legacy';
+  static const String trial = 'trial';
+  static const String starter = 'starter';
+  static const String professional = 'professional';
+  static const String school = 'school';
+  static const String enterprise = 'enterprise';
+
+  static const List<String> all = [
+    legacy,
+    trial,
+    starter,
+    professional,
+    school,
+    enterprise,
   ];
 
-  static SubscriptionPlanInfo getPlan(SubscriptionPlan plan) {
-    return all.firstWhere((p) => p.plan == plan);
+  static const List<String> commercial = [
+    trial,
+    starter,
+    professional,
+    school,
+    enterprise,
+  ];
+
+  static String normalize(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase().replaceAll('-', '_');
+    if (raw == null || raw.isEmpty) return legacy;
+    switch (raw) {
+      case 'free_trial':
+      case 'demo':
+        return trial;
+      case 'basic':
+      case 'teacher':
+        return starter;
+      case 'pro':
+      case 'paid':
+        return professional;
+      case 'business':
+      case 'academy':
+        return school;
+      case 'unlimited':
+        return enterprise;
+      default:
+        return all.contains(raw) ? raw : legacy;
+    }
+  }
+
+  static String label(String plan) {
+    switch (normalize(plan)) {
+      case trial:
+        return 'تجربة';
+      case starter:
+        return 'Starter';
+      case professional:
+        return 'Professional';
+      case school:
+        return 'School';
+      case enterprise:
+        return 'Enterprise';
+      case legacy:
+      default:
+        return 'Legacy';
+    }
   }
 }
 
-/// حالة اشتراك المستخدم
-class UserSubscription {
-  final SubscriptionPlan plan;
-  final DateTime? startDate;
-  final DateTime? expiryDate;
-  final bool isActive;
-  final bool isTrial;
-  final int daysRemaining;
+class SubscriptionStatus {
+  static const String none = 'none';
+  static const String trialing = 'trialing';
+  static const String active = 'active';
+  static const String pastDue = 'past_due';
+  static const String canceled = 'canceled';
+  static const String expired = 'expired';
 
-  const UserSubscription({
-    required this.plan,
-    this.startDate,
-    this.expiryDate,
-    required this.isActive,
-    this.isTrial = false,
-    required this.daysRemaining,
+  static const List<String> all = [
+    none,
+    trialing,
+    active,
+    pastDue,
+    canceled,
+    expired,
+  ];
+
+  static String normalize(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase().replaceAll('-', '_');
+    if (raw == null || raw.isEmpty) return none;
+    switch (raw) {
+      case 'trial':
+      case 'on_trial':
+        return trialing;
+      case 'paid':
+      case 'enabled':
+        return active;
+      case 'pastdue':
+      case 'payment_failed':
+        return pastDue;
+      case 'cancelled':
+        return canceled;
+      default:
+        return all.contains(raw) ? raw : none;
+    }
+  }
+
+  static String label(String status) {
+    switch (normalize(status)) {
+      case trialing:
+        return 'تجربة نشطة';
+      case active:
+        return 'نشط';
+      case pastDue:
+        return 'متأخر الدفع';
+      case canceled:
+        return 'ملغي';
+      case expired:
+        return 'منتهي';
+      case none:
+      default:
+        return 'غير مفعّل';
+    }
+  }
+}
+
+class PlanLimits {
+  final int maxStudentsPerClass;
+  final int maxPendingSync;
+  final int maxDevices;
+  final int maxSeats;
+  final int trialDays;
+  final bool serverTranscription;
+  final bool exportReports;
+  final bool advancedAnalytics;
+  final bool userManagement;
+
+  const PlanLimits({
+    required this.maxStudentsPerClass,
+    required this.maxPendingSync,
+    required this.maxDevices,
+    required this.maxSeats,
+    required this.trialDays,
+    required this.serverTranscription,
+    required this.exportReports,
+    required this.advancedAnalytics,
+    required this.userManagement,
   });
 
-  factory UserSubscription.free() => const UserSubscription(
-        plan: SubscriptionPlan.free,
-        isActive: true,
-        daysRemaining: -1, // مستمر
-      );
+  factory PlanLimits.forPlan(String plan) {
+    switch (SubscriptionPlan.normalize(plan)) {
+      case SubscriptionPlan.trial:
+        return const PlanLimits(
+          maxStudentsPerClass: 25,
+          maxPendingSync: 30,
+          maxDevices: 1,
+          maxSeats: 1,
+          trialDays: 14,
+          serverTranscription: false,
+          exportReports: false,
+          advancedAnalytics: false,
+          userManagement: false,
+        );
+      case SubscriptionPlan.starter:
+        return const PlanLimits(
+          maxStudentsPerClass: 60,
+          maxPendingSync: 120,
+          maxDevices: 1,
+          maxSeats: 1,
+          trialDays: 0,
+          serverTranscription: false,
+          exportReports: true,
+          advancedAnalytics: false,
+          userManagement: false,
+        );
+      case SubscriptionPlan.professional:
+        return const PlanLimits(
+          maxStudentsPerClass: 120,
+          maxPendingSync: 300,
+          maxDevices: 3,
+          maxSeats: 1,
+          trialDays: 0,
+          serverTranscription: true,
+          exportReports: true,
+          advancedAnalytics: true,
+          userManagement: false,
+        );
+      case SubscriptionPlan.school:
+        return const PlanLimits(
+          maxStudentsPerClass: 500,
+          maxPendingSync: 1000,
+          maxDevices: 20,
+          maxSeats: 25,
+          trialDays: 0,
+          serverTranscription: true,
+          exportReports: true,
+          advancedAnalytics: true,
+          userManagement: true,
+        );
+      case SubscriptionPlan.enterprise:
+      case SubscriptionPlan.legacy:
+      default:
+        return const PlanLimits(
+          maxStudentsPerClass: 0,
+          maxPendingSync: 1000,
+          maxDevices: 0,
+          maxSeats: 0,
+          trialDays: 0,
+          serverTranscription: true,
+          exportReports: true,
+          advancedAnalytics: true,
+          userManagement: true,
+        );
+    }
+  }
 
-  bool get isPaid => plan != SubscriptionPlan.free;
-  bool get isExpired =>
-      expiryDate != null && DateTime.now().isAfter(expiryDate!);
-  bool get isExpiringSoon => daysRemaining > 0 && daysRemaining <= 7;
-
-  SubscriptionPlanInfo get planInfo => SubscriptionPlans.getPlan(plan);
+  factory PlanLimits.fromJson(
+    Map<String, dynamic>? json, {
+    required PlanLimits fallback,
+  }) {
+    if (json == null) return fallback;
+    return PlanLimits(
+      maxStudentsPerClass:
+          _parseInt(
+            json['max_students_per_class'] ?? json['maxStudentsPerClass'],
+          ) ??
+          fallback.maxStudentsPerClass,
+      maxPendingSync:
+          _parseInt(json['max_pending_sync'] ?? json['maxPendingSync']) ??
+          fallback.maxPendingSync,
+      maxDevices:
+          _parseInt(json['max_devices'] ?? json['maxDevices']) ??
+          fallback.maxDevices,
+      maxSeats:
+          _parseInt(json['max_seats'] ?? json['maxSeats']) ?? fallback.maxSeats,
+      trialDays:
+          _parseInt(json['trial_days'] ?? json['trialDays']) ??
+          fallback.trialDays,
+      serverTranscription:
+          _parseBool(
+            json['server_transcription'] ?? json['serverTranscription'],
+          ) ??
+          fallback.serverTranscription,
+      exportReports:
+          _parseBool(json['export_reports'] ?? json['exportReports']) ??
+          fallback.exportReports,
+      advancedAnalytics:
+          _parseBool(json['advanced_analytics'] ?? json['advancedAnalytics']) ??
+          fallback.advancedAnalytics,
+      userManagement:
+          _parseBool(json['user_management'] ?? json['userManagement']) ??
+          fallback.userManagement,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
-        'plan': plan.name,
-        'start_date': startDate?.toIso8601String(),
-        'expiry_date': expiryDate?.toIso8601String(),
-        'is_active': isActive,
-        'is_trial': isTrial,
-      };
+    'max_students_per_class': maxStudentsPerClass,
+    'max_pending_sync': maxPendingSync,
+    'max_devices': maxDevices,
+    'max_seats': maxSeats,
+    'trial_days': trialDays,
+    'server_transcription': serverTranscription,
+    'export_reports': exportReports,
+    'advanced_analytics': advancedAnalytics,
+    'user_management': userManagement,
+  };
 
-  factory UserSubscription.fromJson(Map<String, dynamic> json) {
-    final planName = json['plan']?.toString() ?? 'free';
-    final plan = SubscriptionPlan.values.firstWhere(
-      (p) => p.name == planName,
-      orElse: () => SubscriptionPlan.free,
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static bool? _parseBool(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value.toString().trim().toLowerCase();
+    if (['true', '1', 'yes', 'y'].contains(text)) return true;
+    if (['false', '0', 'no', 'n'].contains(text)) return false;
+    return null;
+  }
+}
+
+class Subscription {
+  final String plan;
+  final String status;
+  final DateTime? startsAt;
+  final DateTime? expiresAt;
+  final bool lifetime;
+  final bool deviceLimitReached;
+  final bool seatLimitReached;
+  final PlanLimits limits;
+
+  Subscription({
+    required String plan,
+    required String status,
+    this.startsAt,
+    this.expiresAt,
+    this.lifetime = false,
+    this.deviceLimitReached = false,
+    this.seatLimitReached = false,
+    PlanLimits? limits,
+  }) : plan = SubscriptionPlan.normalize(plan),
+       status = SubscriptionStatus.normalize(status),
+       limits = limits ?? PlanLimits.forPlan(SubscriptionPlan.normalize(plan));
+
+  factory Subscription.legacyActive() {
+    return Subscription(
+      plan: SubscriptionPlan.legacy,
+      status: SubscriptionStatus.active,
+      lifetime: true,
     );
-    final expiry = json['expiry_date'] != null
-        ? DateTime.tryParse(json['expiry_date'].toString())
-        : null;
-    // 🔴 عطل تم اكتشافه وإصلاحه هنا (daysRemaining Semantic Collision):
-    // كان الحد الأدنى للـ clamp هو -1 رغم أن هذا التعليق نفسه يوثّق نية
-    // مخالفة ("يجب أن يكون 0 وليس سالباً"). القيمة -1 محجوزة حصرياً في
-    // UserSubscription.free() للدلالة على "اشتراك مستمر بلا تاريخ انتهاء
-    // إطلاقاً". لو وصل هذا الفرع (expiry != null) بتاريخ انتهاء في
-    // الماضي (اشتراك مدفوع منتهي فعلياً)، كان clamp(-1, 9999) يُعيد -1
-    // أيضاً — أي نفس قيمة "الاستمرارية بلا نهاية"! أي كود مستقبلي يتحقق
-    // من daysRemaining == -1 مباشرة (بدل الاعتماد على isExpired/expiryDate)
-    // كان سيُفسِّر خطأً اشتراكاً مدفوعاً منتهياً منذ أيام على أنه "مجاني
-    // مستمر بلا حدود". الإصلاح: الحد الأدنى الصحيح لحالة "هناك تاريخ
-    // انتهاء محدَّد" هو 0 (منتهي/ينتهي اليوم)، وتبقى -1 محجوزة فقط لحالة
-    // "لا يوجد تاريخ انتهاء إطلاقاً" (expiry == null).
-    final days = expiry != null
-        ? expiry.difference(DateTime.now()).inDays.clamp(0, 9999)
-        : -1;
-    return UserSubscription(
+  }
+
+  factory Subscription.developerLifetime() {
+    return Subscription(
+      plan: SubscriptionPlan.enterprise,
+      status: SubscriptionStatus.active,
+      lifetime: true,
+    );
+  }
+
+  factory Subscription.unlicensed() {
+    return Subscription(
+      plan: SubscriptionPlan.trial,
+      status: SubscriptionStatus.none,
+    );
+  }
+
+  factory Subscription.fromJson(dynamic raw, {String? fallbackPlan}) {
+    if (raw is! Map) {
+      return Subscription.unlicensed();
+    }
+    final json = Map<String, dynamic>.from(raw);
+    final plan = SubscriptionPlan.normalize(
+      json['plan'] ??
+          json['subscription_plan'] ??
+          json['billing_plan'] ??
+          fallbackPlan,
+    );
+    final defaultLimits = PlanLimits.forPlan(plan);
+    final limitsRaw = json['limits'];
+    final limits = PlanLimits.fromJson(
+      limitsRaw is Map ? Map<String, dynamic>.from(limitsRaw) : null,
+      fallback: defaultLimits,
+    );
+    return Subscription(
       plan: plan,
-      startDate: json['start_date'] != null
-          ? DateTime.tryParse(json['start_date'].toString())
-          : null,
-      expiryDate: expiry,
-      isActive: json['is_active'] as bool? ?? true,
-      isTrial: json['is_trial'] as bool? ?? false,
-      daysRemaining: days,
+      status: json['status'] ?? json['subscription_status'],
+      startsAt: _parseDate(json['starts_at'] ?? json['started_at']),
+      expiresAt: _parseDate(
+        json['expires_at'] ??
+            json['subscription_expires_at'] ??
+            json['current_period_end'] ??
+            json['trial_ends_at'],
+      ),
+      lifetime: _parseBool(json['lifetime'] ?? json['is_lifetime']) ?? false,
+      deviceLimitReached:
+          _parseBool(
+            json['device_limit_reached'] ?? json['deviceLimitReached'],
+          ) ??
+          false,
+      seatLimitReached:
+          _parseBool(json['seat_limit_reached'] ?? json['seatLimitReached']) ??
+          false,
+      limits: limits,
     );
+  }
+
+  bool get isExpiredByDate {
+    final expiry = expiresAt;
+    if (expiry == null) return false;
+    return DateTime.now().isAfter(expiry);
+  }
+
+  bool get isUsable =>
+      (lifetime ||
+          ((status == SubscriptionStatus.active ||
+                  status == SubscriptionStatus.trialing) &&
+              !isExpiredByDate)) &&
+      !deviceLimitReached &&
+      !seatLimitReached;
+
+  bool get needsPayment =>
+      status == SubscriptionStatus.pastDue ||
+      status == SubscriptionStatus.canceled ||
+      status == SubscriptionStatus.expired ||
+      isExpiredByDate ||
+      status == SubscriptionStatus.none;
+
+  bool get canUseServerTranscription => isUsable && limits.serverTranscription;
+
+  bool get canExportReports => isUsable && limits.exportReports;
+
+  bool get canUseAdvancedAnalytics => isUsable && limits.advancedAnalytics;
+
+  bool get canManageCommercialUsers => isUsable && limits.userManagement;
+
+  bool canUseStudentCount(int count) {
+    return isUsable &&
+        (limits.maxStudentsPerClass <= 0 ||
+            count <= limits.maxStudentsPerClass);
+  }
+
+  bool canQueueMorePending(int pendingCount) {
+    return isUsable &&
+        limits.maxPendingSync > 0 &&
+        pendingCount < limits.maxPendingSync;
+  }
+
+  String get planLabel => SubscriptionPlan.label(plan);
+
+  String get statusLabel {
+    if (isExpiredByDate && !lifetime) return 'منتهي';
+    return SubscriptionStatus.label(status);
+  }
+
+  String get expiryLabel {
+    if (lifetime) return 'مدى الحياة';
+    final expiry = expiresAt;
+    if (expiry == null) return 'بدون تاريخ انتهاء';
+    final day = expiry.day.toString().padLeft(2, '0');
+    final month = expiry.month.toString().padLeft(2, '0');
+    return '$day/$month/${expiry.year}';
+  }
+
+  String blockedMessage(String featureName) {
+    if (!isUsable) {
+      return 'لا يمكن استخدام $featureName لأن الاشتراك غير نشط أو منتهي.';
+    }
+    return 'ميزة $featureName غير متاحة في خطة $planLabel الحالية.';
+  }
+
+  Map<String, dynamic> toJson() => {
+    'plan': plan,
+    'status': status,
+    'starts_at': startsAt?.toIso8601String(),
+    'expires_at': expiresAt?.toIso8601String(),
+    'lifetime': lifetime,
+    'device_limit_reached': deviceLimitReached,
+    'seat_limit_reached': seatLimitReached,
+    'limits': limits.toJson(),
+  };
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+    return DateTime.tryParse(text);
+  }
+
+  static bool? _parseBool(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value.toString().trim().toLowerCase();
+    if (['true', '1', 'yes', 'y'].contains(text)) return true;
+    if (['false', '0', 'no', 'n'].contains(text)) return false;
+    return null;
   }
 }

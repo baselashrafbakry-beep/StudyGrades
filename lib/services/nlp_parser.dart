@@ -27,6 +27,13 @@ class NLPResult {
       numbers.isEmpty && commands.isEmpty && originalText.trim().isEmpty;
 }
 
+class _ArabicNumberMatch {
+  final double value;
+  final int consumed;
+
+  const _ArabicNumberMatch(this.value, this.consumed);
+}
+
 class NLPParser {
   // ثغرة مُصلَحة: "صفر" معزولة = رقم 0، وليس أمر "clear"
   static const Map<String, List<String>> _commandKeywords = {
@@ -72,13 +79,7 @@ class NLPParser {
       'reset',
       'إعادة',
     ],
-    'save': [
-      'حفظ',
-      'احفظ',
-      'سجل',
-      'save',
-      'حفظ الآن',
-    ],
+    'save': ['حفظ', 'احفظ', 'سجل', 'save', 'حفظ الآن'],
     'absent': [
       'غائب',
       'غايب',
@@ -284,99 +285,6 @@ class NLPParser {
     'وتلت': 0.333,
     'تلت': 0.333,
     'وثلاثه ارباع': 0.75,
-    'وثلاثة ارباع': 0.75,
-    'ثلاثه ارباع': 0.75,
-    'ثلاثة ارباع': 0.75,
-    // أرقام كسرية شائعة في الدرجات (مثل 18.5، 9.5)
-    // 21-29
-    'واحد وعشرين': 21,
-    'واحدة وعشرين': 21,
-    'اثنان وعشرون': 22,
-    'اثنين وعشرين': 22,
-    'ثلاثة وعشرون': 23,
-    'ثلاثه وعشرين': 23,
-    'أربعة وعشرون': 24,
-    'اربعه وعشرين': 24,
-    'خمسة وعشرون': 25,
-    'خمسه وعشرين': 25,
-    'ستة وعشرون': 26,
-    'سته وعشرين': 26,
-    'سبعة وعشرون': 27,
-    'سبعه وعشرين': 27,
-    'ثمانية وعشرون': 28,
-    'تمانيه وعشرين': 28,
-    'تسعة وعشرون': 29,
-    'تسعه وعشرين': 29,
-    // 31-39
-    'واحد وثلاثين': 31,
-    'اثنين وثلاثين': 32,
-    'ثلاثه وثلاثين': 33,
-    'اربعه وثلاثين': 34,
-    'خمسه وثلاثين': 35,
-    'سته وثلاثين': 36,
-    'سبعه وثلاثين': 37,
-    'تمانيه وثلاثين': 38,
-    'تسعه وثلاثين': 39,
-    // 41-49
-    'واحد واربعين': 41,
-    'اثنين واربعين': 42,
-    'ثلاثه واربعين': 43,
-    'اربعه واربعين': 44,
-    'خمسه واربعين': 45,
-    'سته واربعين': 46,
-    'سبعه واربعين': 47,
-    'تمانيه واربعين': 48,
-    'تسعه واربعين': 49,
-    // 51-59
-    'واحد وخمسين': 51,
-    'اثنين وخمسين': 52,
-    'ثلاثه وخمسين': 53,
-    'اربعه وخمسين': 54,
-    'خمسه وخمسين': 55,
-    'سته وخمسين': 56,
-    'سبعه وخمسين': 57,
-    'تمانيه وخمسين': 58,
-    'تسعه وخمسين': 59,
-    // 61-69
-    'واحد وستين': 61,
-    'اثنين وستين': 62,
-    'ثلاثه وستين': 63,
-    'اربعه وستين': 64,
-    'خمسه وستين': 65,
-    'سته وستين': 66,
-    'سبعه وستين': 67,
-    'تمانيه وستين': 68,
-    'تسعه وستين': 69,
-    // 71-79
-    'واحد وسبعين': 71,
-    'اثنين وسبعين': 72,
-    'ثلاثه وسبعين': 73,
-    'اربعه وسبعين': 74,
-    'خمسه وسبعين': 75,
-    'سته وسبعين': 76,
-    'سبعه وسبعين': 77,
-    'تمانيه وسبعين': 78,
-    'تسعه وسبعين': 79,
-    // 81-89
-    'واحد وتمانين': 81,
-    'اثنين وتمانين': 82,
-    'ثلاثه وتمانين': 83,
-    'اربعه وتمانين': 84,
-    'خمسه وتمانين': 85,
-    'سته وتمانين': 86,
-    'سبعه وتمانين': 87,
-    'تمانيه وتمانين': 88,
-    'تسعه وتمانين': 89,
-    // 91-99
-    'واحد وتسعين': 91,
-    'اثنين وتسعين': 92,
-    'ثلاثه وتسعين': 93,
-    'اربعه وتسعين': 94,
-    'خمسه وتسعين': 95,
-    'سته وتسعين': 96,
-    'سبعه وتسعين': 97,
-    'تمانيه وتسعين': 98,
-    'تسعه وتسعين': 99,
   };
 
   /// خريطة الأرقام العربية الهندية إلى اللاتينية
@@ -415,6 +323,11 @@ class NLPParser {
     t = t.replaceAll('ة', 'ه');
     t = t.replaceAll('ؤ', 'و');
     t = t.replaceAll('ئ', 'ي');
+    // Preserve decimal comma between digits before replacing punctuation.
+    t = t.replaceAllMapped(
+      RegExp(r'(\d)[,\u060C](\d)'),
+      (m) => '${m.group(1)}.${m.group(2)}',
+    );
     // إزالة علامات الترقيم (مع الحفاظ على النقطة في الأرقام مثل 8.5)
     t = t.replaceAll(RegExp(r'[,،؛؟!:؟"\(\)\[\]{}\-_/\\]'), ' ');
     // تقليص المسافات
@@ -435,15 +348,9 @@ class NLPParser {
     final numbers = <double>[];
     final commands = <String>{};
 
-    // 1) استخراج الأرقام اللاتينية والهندية (مثل "15"، "20.5")
-    final digitMatches = RegExp(r'\d+(?:[.,]\d+)?').allMatches(normalized);
-    for (final m in digitMatches) {
-      final v = double.tryParse(m.group(0)!.replaceAll(',', '.'));
-      if (v != null && v.isFinite) numbers.add(v);
-    }
-
-    // 2) استخراج الكلمات العربية للأرقام المركبة مثل "خمسة وعشرين"
-    _extractArabicNumbers(normalized, numbers);
+    // Extract digit and word forms in their spoken order. Field assignment is
+    // positional, so collecting all digits before Arabic words can swap grades.
+    _extractNumbersInOrder(normalized, numbers);
 
     // 3) استخراج الأوامر
     _extractCommands(normalized, commands);
@@ -460,122 +367,128 @@ class NLPParser {
       commands.remove('zero');
     }
 
-    return NLPResult(
-      numbers: numbers,
-      commands: commands,
-      originalText: text,
-    );
+    return NLPResult(numbers: numbers, commands: commands, originalText: text);
   }
 
-  /// كسر عشري مدعوم؟ (نص/ربع/تلت/ثلاثة أرباع)
-  static bool _isFraction(double n) =>
-      n == 0.5 || n == 0.25 || n == 0.333 || n == 0.75;
-
-  /// يضيف كسراً إلى آخر رقم صحيح في القائمة (مثال: [10] + 0.75 -> [10.75]).
-  /// إذا لم يوجد رقم سابق، أو كان الرقم السابق يحتوي بالفعل على كسر،
-  /// يُتجاهل الكسر الجديد لمنع تراكم مزدوج أو كسر معلّق بلا سياق.
-  static void _appendFraction(List<double> numbers, double fraction) {
-    if (numbers.isEmpty) return;
-    final prev = numbers.last;
-    final prevWhole = prev.truncateToDouble();
-    if (prev == prevWhole) {
-      numbers[numbers.length - 1] =
-          double.parse((prev + fraction).toStringAsFixed(3));
-    }
-    // وإلا: الرقم الأخير يحتوي على كسر بالفعل → تجاهل الكسر الجديد
-  }
-
-  /// يستخرج الأرقام العربية المنطوقة من النص المُطبَّع، عبر تمريرة واحدة
-  /// متسلسلة من اليسار لليمين (بدلاً من تمريرتين متداخلتين كما في السابق).
-  ///
-  /// إصلاح ثغرة أمنية خطيرة (تصحيح جذري لمحرك التعرف على الكسور):
-  /// كانت هناك تمريرتان منفصلتان — تمريرة أولى تبحث عن عبارات مركبة
-  /// (مثل "خمسة عشر"، "وثلاثة أرباع") كنص فرعي داخل الجملة الكاملة، ثم
-  /// تمريرة ثانية تُعيد معالجة **نفس الكلمات** كلمة بكلمة دون علم بأن
-  /// التمريرة الأولى استهلكتها بالفعل. النتيجة كانت كارثية على البيانات:
-  ///   - "عشرة وثلاثة أرباع" (10.75) كانت تُسجَّل كـ [10, 3] بدلاً من [10.75]
-  ///   - "خمسة عشر" (15) كانت تُسجَّل كـ [15, 5, 10] (أرقام وهمية إضافية)
-  ///   - "عشرة عشرة" (درجتان منفصلتان = 10 لكل حقل) كانت تُفقَد إحداهما
-  ///     بسبب فحص "منع التكرار" الخاطئ الذي يحذف القيم المتطابقة الشرعية
-  /// هذا التصحيح يستخدم مؤشراً واحداً `i` يتحرك للأمام فقط، ويستهلك كل
-  /// كلمة مرة واحدة فقط (تخطي الكلمات المُستهلَكة عبر `i += 2`)، مع عدم
-  /// استخدام أي فحص "يحتوي على القيمة بالفعل" الذي كان يُسقِط درجات
-  /// متكررة شرعية (مثل رصد 10/10 لحقلين مختلفين بنفس القيمة).
-  static void _extractArabicNumbers(String normalized, List<double> numbers) {
+  static void _extractNumbersInOrder(String normalized, List<double> numbers) {
     final words = normalized
         .split(' ')
-        .where((w) => w.isNotEmpty)
+        .where((word) => word.trim().isNotEmpty)
         .toList(growable: false);
+
     var i = 0;
-
     while (i < words.length) {
-      // ── أولاً: تجربة عبارة من كلمتين متتاليتين تطابق مفتاحاً مركّباً في
-      // القاموس حرفياً (يغطي: الأعداد من 11-19، الكسور مثل "وثلاثة أرباع"،
-      // والمركّبات "وحدة+عشرات" مثل "خمسة وعشرين") — أولوية قصوى لأنها
-      // أكثر تحديداً من أي تطابق كلمة مفردة ──
-      if (i + 1 < words.length) {
-        final twoWordKey = '${words[i]} ${words[i + 1]}';
-        final n = _arabicNumbers[twoWordKey];
-        if (n != null) {
-          if (_isFraction(n)) {
-            _appendFraction(numbers, n);
-          } else {
-            numbers.add(n);
+      final digit = double.tryParse(words[i].replaceAll(',', '.'));
+      if (digit != null && digit.isFinite) {
+        var value = digit;
+        var consumed = 1;
+        final fraction = _matchArabicNumberAt(words, i + consumed);
+        if (fraction != null && _isFraction(fraction.value)) {
+          value = double.parse((value + fraction.value).toStringAsFixed(3));
+          consumed += fraction.consumed;
+        }
+        numbers.add(value);
+        i += consumed;
+        continue;
+      }
+
+      final match = _matchArabicNumberAt(words, i);
+      if (match == null) {
+        i++;
+        continue;
+      }
+
+      if (_isFraction(match.value)) {
+        if (numbers.isNotEmpty) {
+          if (numbers.last == numbers.last.truncateToDouble()) {
+            numbers[numbers.length - 1] = double.parse(
+              (numbers.last + match.value).toStringAsFixed(3),
+            );
           }
-          i += 2;
-          continue;
+        } else {
+          numbers.add(match.value);
         }
-      }
-
-      final w = words[i];
-
-      // ── تطابق كلمة مفردة، مع دعم إسقاط حرف "و" البادئ إن لزم ──
-      String? matched;
-      if (_arabicNumbers.containsKey(w)) {
-        matched = w;
-      } else if (w.startsWith('و') &&
-          w.length > 1 &&
-          _arabicNumbers.containsKey(w.substring(1))) {
-        matched = w.substring(1);
-      }
-
-      if (matched == null) {
-        i++;
+        i += match.consumed;
         continue;
       }
 
-      final n = _arabicNumbers[matched]!;
-
-      // ── الكسور المفردة (نادرة الحدوث بدون عبارة مركّبة، لكن مدعومة
-      // احتياطاً): تُضاف إلى الرقم السابق ──
-      if (_isFraction(n)) {
-        _appendFraction(numbers, n);
-        i++;
-        continue;
+      var value = match.value;
+      var consumed = match.consumed;
+      final fraction = _matchArabicNumberAt(words, i + consumed);
+      if (fraction != null && _isFraction(fraction.value)) {
+        value = double.parse((value + fraction.value).toStringAsFixed(3));
+        consumed += fraction.consumed;
       }
 
-      // ── عشرات (20,30,…90) تعقبها وحدات بـ "و": "عشرين وخمسة" = 25 ──
-      // (الاتجاه المعاكس "خمسة وعشرين" مغطّى بالفعل عبر عبارات القاموس
-      // المركّبة أعلاه، فلا حاجة لمعالجته يدوياً هنا)
-      if (n >= 20 && n % 10 == 0 && i + 1 < words.length) {
-        var nextW = words[i + 1];
-        if (nextW.startsWith('و') && nextW.length > 1) {
-          nextW = nextW.substring(1);
-        }
-        final nextN = _arabicNumbers[nextW];
-        if (nextN != null && nextN >= 1 && nextN <= 9) {
-          numbers.add(n + nextN);
-          i += 2;
-          continue;
-        }
-      }
-
-      // ── رقم عادي — لا يوجد فحص "منع تكرار": درجتان متطابقتان لحقلين
-      // مختلفين (مثال: "عشرة عشرة") يجب أن تُسجَّلا كلتاهما ──
-      numbers.add(n);
-      i++;
+      numbers.add(value);
+      i += consumed;
     }
   }
+
+  static _ArabicNumberMatch? _matchArabicNumberAt(
+    List<String> words,
+    int index,
+  ) {
+    if (index >= words.length) return null;
+
+    final current = _stripLeadingAnd(words[index]);
+    final currentValue = _arabicNumbers[current];
+    final next = index + 1 < words.length
+        ? _stripLeadingAnd(words[index + 1])
+        : null;
+    final nextValue = next == null ? null : _arabicNumbers[next];
+
+    if (currentValue != null && nextValue != null) {
+      if (_isUnit(currentValue) && (_isTens(nextValue) || nextValue == 10)) {
+        return _ArabicNumberMatch(currentValue + nextValue, 2);
+      }
+      if (_isTens(currentValue) && _isUnit(nextValue)) {
+        return _ArabicNumberMatch(currentValue + nextValue, 2);
+      }
+    }
+
+    final entries = _arabicNumbers.entries.toList()
+      ..sort((a, b) {
+        final aTokens = _normalize(a.key).split(' ').length;
+        final bTokens = _normalize(b.key).split(' ').length;
+        final byTokens = bTokens.compareTo(aTokens);
+        if (byTokens != 0) return byTokens;
+        return b.key.length.compareTo(a.key.length);
+      });
+
+    for (final entry in entries) {
+      final tokens = _normalize(
+        entry.key,
+      ).split(' ').where((token) => token.isNotEmpty).toList(growable: false);
+      if (tokens.isEmpty || index + tokens.length > words.length) continue;
+      var matched = true;
+      for (var offset = 0; offset < tokens.length; offset++) {
+        if (_stripLeadingAnd(words[index + offset]) !=
+            _stripLeadingAnd(tokens[offset])) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return _ArabicNumberMatch(entry.value, tokens.length);
+    }
+
+    return null;
+  }
+
+  static String _stripLeadingAnd(String word) {
+    if (_arabicNumbers.containsKey(word)) return word;
+    const waw = '\u0648';
+    if (!word.startsWith(waw) || word.length <= 1) return word;
+    final stripped = word.substring(1);
+    return _arabicNumbers.containsKey(stripped) ? stripped : word;
+  }
+
+  static bool _isUnit(double value) => value >= 1 && value <= 9;
+
+  static bool _isTens(double value) => value >= 20 && value % 10 == 0;
+
+  static bool _isFraction(double value) =>
+      value == 0.5 || value == 0.25 || value == 0.333 || value == 0.75;
 
   static void _extractCommands(String normalized, Set<String> commands) {
     _commandKeywords.forEach((cmd, keys) {
@@ -615,8 +528,9 @@ class NLPParser {
     // المرور الأول: ملء الحقول الفارغة
     for (final f in fields) {
       if (idx >= numbers.length) break;
-      if (!updated.containsKey(f.name)) {
-        final v = numbers[idx].clamp(0, f.max).toDouble();
+      final current = updated[f.name];
+      if (current == null || !current.isFinite) {
+        final v = GradeField.clampGrade(numbers[idx], f);
         updated[f.name] = v;
         idx++;
       }
@@ -626,7 +540,7 @@ class NLPParser {
     if (idx < numbers.length) {
       for (final f in fields) {
         if (idx >= numbers.length) break;
-        final v = numbers[idx].clamp(0, f.max).toDouble();
+        final v = GradeField.clampGrade(numbers[idx], f);
         updated[f.name] = v;
         idx++;
       }

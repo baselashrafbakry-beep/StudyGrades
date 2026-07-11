@@ -5,14 +5,13 @@ import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_service.dart';
-import '../../providers/theme_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/error_handler.dart';
 import 'users_management_screen.dart';
 import 'system_stats_screen.dart';
 import 'system_settings_screen.dart';
 import 'admin_activity_log_screen.dart';
-import 'license_generator_screen.dart';
 
 /// لوحة تحكم المطور والمدير الرئيسية
 class AdminPanelScreen extends StatefulWidget {
@@ -50,8 +49,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
@@ -74,13 +71,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               const SizedBox(height: 16),
               _buildSection('الإدارة', Icons.admin_panel_settings_rounded),
               _buildAdminMenu(user),
-              const SizedBox(height: 16),
-              _buildSection('التحليلات والمراقبة', Icons.analytics_outlined),
-              _buildAnalyticsMenu(user),
+              if (user.canViewSystemStats) ...[
+                const SizedBox(height: 16),
+                _buildSection('التحليلات والمراقبة', Icons.analytics_outlined),
+                _buildAnalyticsMenu(user),
+              ],
               if (user.canEditSystemSettings) ...[
                 const SizedBox(height: 16),
-                _buildSection('إعدادات النظام (المطور)',
-                    Icons.settings_applications_rounded),
+                _buildSection(
+                  'إعدادات النظام (المطور)',
+                  Icons.settings_applications_rounded,
+                ),
                 _buildDeveloperMenu(),
               ],
               const SizedBox(height: 30),
@@ -110,13 +111,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             children: [
               IconButton(
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_forward_rounded,
-                    color: Colors.white),
+                icon: const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Colors.white,
+                ),
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -150,7 +155,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             width: 70,
             height: 70,
             decoration: BoxDecoration(
-              color: AppColors.cardBackground,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
@@ -254,6 +259,37 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ],
           ),
           const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _statCard(
+                  icon: Icons.workspace_premium_rounded,
+                  value: '${_stats['active_subscriptions'] ?? 0}',
+                  label: 'اشتراك نشط',
+                  color: AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _statCard(
+                  icon: Icons.schedule_rounded,
+                  value: '${_stats['trial_subscriptions'] ?? 0}',
+                  label: 'تجربة',
+                  color: AppColors.info,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _statCard(
+                  icon: Icons.warning_amber_rounded,
+                  value: '${_stats['expired_subscriptions'] ?? 0}',
+                  label: 'غير نشط',
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -308,8 +344,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.success.withValues(alpha: 0.13),
                     borderRadius: BorderRadius.circular(10),
@@ -354,7 +392,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -421,19 +459,28 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(
         children: [
-          _menuTile(
-            icon: Icons.people_alt_rounded,
-            iconColor: AppColors.primary,
-            title: 'إدارة المستخدمين',
-            subtitle:
-                'إنشاء وتعديل وحذف الحسابات • ${_stats['total_users'] ?? 0} حساب',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const UsersManagementScreen(),
-              ),
-            ).then((_) => _loadStats()),
-          ),
+          if (user.canManageUsers)
+            _menuTile(
+              icon: Icons.people_alt_rounded,
+              iconColor: AppColors.primary,
+              title: 'إدارة المستخدمين',
+              subtitle:
+                  'إنشاء وتعديل وحذف الحسابات • ${_stats['total_users'] ?? 0} حساب',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const UsersManagementScreen(),
+                ),
+              ).then((_) => _loadStats()),
+            )
+          else
+            _menuTile(
+              icon: Icons.lock_outline_rounded,
+              iconColor: AppColors.textHint,
+              title: 'إدارة المستخدمين',
+              subtitle: 'غير متاحة في خطة الاشتراك الحالية',
+              onTap: () => _showLockedPlanDialog(user),
+            ),
           _menuTile(
             icon: Icons.shield_rounded,
             iconColor: AppColors.error,
@@ -448,9 +495,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             subtitle: '${_stats['total_activities'] ?? 0} عملية مسجلة',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const AdminActivityLogScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const AdminActivityLogScreen()),
             ).then((_) => _loadStats()),
           ),
         ],
@@ -470,9 +515,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             subtitle: 'تحليل تفصيلي للحسابات والاستخدام',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const SystemStatsScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SystemStatsScreen()),
             ),
           ),
           _menuTile(
@@ -482,9 +525,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             subtitle: '${_stats['new_users_week'] ?? 0} حساب جديد',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const SystemStatsScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SystemStatsScreen()),
             ),
           ),
         ],
@@ -504,33 +545,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             subtitle: 'تحكم كامل بإعدادات التطبيق',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const SystemSettingsScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SystemSettingsScreen()),
             ),
           ),
           _menuTile(
             icon: Icons.api_rounded,
             iconColor: AppColors.info,
             title: 'إعدادات الخادم (Backend)',
-            subtitle: AdminService.serverUrl,
+            subtitle: Uri.parse(ApiClient.baseUrl).host,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const SystemSettingsScreen(),
-              ),
-            ),
-          ),
-          _menuTile(
-            icon: Icons.vpn_key_rounded,
-            iconColor: const Color(0xFF00897B),
-            title: 'توليد رمز اشتراك مخصص',
-            subtitle: 'توليد كود مرتبط بجهاز عميل معيّن',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const LicenseGeneratorScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SystemSettingsScreen()),
             ),
           ),
         ],
@@ -548,7 +573,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -600,7 +625,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   ],
                 ),
               ),
-              Icon(
+              const Icon(
                 Icons.arrow_back_ios_rounded,
                 size: 14,
                 color: AppColors.textHint,
@@ -645,11 +670,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${AdminService.appName} v${AdminService.appVersion} — Admin Panel',
-            style: GoogleFonts.cairo(
-              fontSize: 11,
-              color: AppColors.textHint,
-            ),
+            'StudyGrades 2026 — Admin Panel',
+            style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textHint),
           ),
         ],
       ),
@@ -692,6 +714,35 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
+  void _showLockedPlanDialog(User user) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline_rounded, color: AppColors.warning),
+            const SizedBox(width: 8),
+            Text(
+              'ميزة غير متاحة',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          user.subscription.blockedMessage('إدارة المستخدمين'),
+          style: GoogleFonts.cairo(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('إغلاق', style: GoogleFonts.cairo()),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showRolesDialog() {
     showDialog(
       context: context,
@@ -701,8 +752,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           children: [
             const Icon(Icons.shield_rounded, color: AppColors.primary),
             const SizedBox(width: 8),
-            Text('الأدوار والصلاحيات',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            Text(
+              'الأدوار والصلاحيات',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: SizedBox(
@@ -767,7 +820,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.cardBackground,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Center(

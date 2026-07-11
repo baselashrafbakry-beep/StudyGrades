@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import '../models/student_model.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 
 class GradeFieldCard extends StatefulWidget {
   final GradeField field;
   final double? value;
   final bool isHighlighted;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double?> onChanged;
 
   const GradeFieldCard({
     super.key,
@@ -37,7 +35,13 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
   @override
   void didUpdateWidget(covariant GradeFieldCard old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value && !_focus.hasFocus) {
+    final fieldChanged =
+        old.field.name != widget.field.name ||
+        old.field.max != widget.field.max;
+    final shouldSync =
+        old.value != widget.value &&
+        (!_focus.hasFocus || widget.value == null || fieldChanged);
+    if (shouldSync) {
       _ctrl.text = _format(widget.value);
     }
   }
@@ -46,6 +50,40 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
     if (v == null) return '';
     if (v == v.roundToDouble()) return v.toStringAsFixed(0);
     return v.toStringAsFixed(2);
+  }
+
+  String _normalizeNumericInput(String value) {
+    const digits = {
+      '\u0660': '0',
+      '\u0661': '1',
+      '\u0662': '2',
+      '\u0663': '3',
+      '\u0664': '4',
+      '\u0665': '5',
+      '\u0666': '6',
+      '\u0667': '7',
+      '\u0668': '8',
+      '\u0669': '9',
+      '\u06F0': '0',
+      '\u06F1': '1',
+      '\u06F2': '2',
+      '\u06F3': '3',
+      '\u06F4': '4',
+      '\u06F5': '5',
+      '\u06F6': '6',
+      '\u06F7': '7',
+      '\u06F8': '8',
+      '\u06F9': '9',
+    };
+    var normalized = value.trim();
+    digits.forEach((from, to) {
+      normalized = normalized.replaceAll(from, to);
+    });
+    return normalized
+        .replaceAll('\u066B', '.')
+        .replaceAll('\u066C', '')
+        .replaceAll(',', '.')
+        .replaceAll('\u060C', '.');
   }
 
   @override
@@ -57,8 +95,6 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<
-        ThemeProvider>(); // يضمن إعادة البناء فوراً عند تبديل الوضع الليلي/الفاتح
     final hasValue = widget.value != null;
     final percent = hasValue && widget.field.max > 0
         ? (widget.value! / widget.field.max).clamp(0.0, 1.0)
@@ -66,10 +102,10 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
     final color = !hasValue
         ? AppColors.textHint
         : percent >= 0.7
-            ? AppColors.success
-            : percent >= 0.5
-                ? AppColors.warning
-                : AppColors.error;
+        ? AppColors.success
+        : percent >= 0.5
+        ? AppColors.warning
+        : AppColors.error;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -78,11 +114,12 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
       decoration: BoxDecoration(
         color: widget.isHighlighted
             ? AppColors.primaryLight.withValues(alpha: 0.08)
-            : AppColors.cardBackground,
+            : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color:
-              widget.isHighlighted ? AppColors.primary : Colors.grey.shade200,
+          color: widget.isHighlighted
+              ? AppColors.primary
+              : Colors.grey.shade200,
           width: widget.isHighlighted ? 2 : 1,
         ),
       ),
@@ -108,7 +145,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               children: [
                 Text(
                   widget.field.label,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -116,7 +153,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 ),
                 Text(
                   'الحد الأقصى: ${_format(widget.field.max)}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textHint,
                   ),
@@ -130,14 +167,18 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               controller: _ctrl,
               focusNode: _focus,
               textAlign: TextAlign.center,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
-                // Allow only digits, single decimal point, no negatives.
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                // Prevent multiple dots and overflow lengths.
+                FilteringTextInputFormatter.allow(
+                  RegExp(
+                    r'[0-9\u0660-\u0669\u06F0-\u06F9\.,\u060C\u066B\u066C]',
+                  ),
+                ),
+                // Prevent multiple decimal separators and overflow lengths.
                 TextInputFormatter.withFunction((oldVal, newVal) {
-                  final t = newVal.text;
+                  final t = _normalizeNumericInput(newVal.text);
                   if (t.isEmpty) return newVal;
                   if ('.'.allMatches(t).length > 1) return oldVal;
                   if (t.length > 6) return oldVal;
@@ -157,7 +198,7 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 ),
                 hintText: '0',
                 suffixText: '/${_format(widget.field.max)}',
-                suffixStyle: TextStyle(
+                suffixStyle: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textHint,
                 ),
@@ -165,15 +206,11 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
                 fillColor: color.withValues(alpha: 0.06),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: color.withValues(alpha: 0.3),
-                  ),
+                  borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: color.withValues(alpha: 0.3),
-                  ),
+                  borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -182,17 +219,25 @@ class _GradeFieldCardState extends State<GradeFieldCard> {
               ),
               onChanged: (v) {
                 if (v.isEmpty) {
-                  widget.onChanged(0);
+                  widget.onChanged(null);
                   return;
                 }
-                final parsed = double.tryParse(v);
+                final parsed = double.tryParse(_normalizeNumericInput(v));
                 if (parsed == null || !parsed.isFinite || parsed < 0) {
                   // Invalid input — silently keep old value, do not propagate.
                   return;
                 }
-                widget.onChanged(
-                  parsed.clamp(0, widget.field.max).toDouble(),
-                );
+                final clamped = parsed.clamp(0, widget.field.max).toDouble();
+                widget.onChanged(clamped);
+                if (clamped != parsed) {
+                  final normalizedText = _format(clamped);
+                  _ctrl.value = TextEditingValue(
+                    text: normalizedText,
+                    selection: TextSelection.collapsed(
+                      offset: normalizedText.length,
+                    ),
+                  );
+                }
               },
             ),
           ),

@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pending_sync.dart';
 import '../utils/error_handler.dart';
-import 'hive_encryption_service.dart';
+import 'secure_hive_service.dart';
 
 /// Local storage service using Hive (document) + SharedPreferences (key-value)
 class StorageService {
@@ -16,18 +17,14 @@ class StorageService {
 
   /// Cache لـ pendingCount لتجنب فك ترميز JSON في كل استدعاء (O(1) بدلاً من O(n))
   static int _cachedPendingCount = -1; // -1 = غير مُحدَّث بعد
+  static String _activeOwnerKey = '';
+  static Future<void> _pendingMutationBarrier = Future<void>.value();
 
   static Future<void> init() async {
-    // لا نستدعي Hive.initFlutter() مرة ثانية — تمت في main.dart
-    // 🔐 الفتح هنا يمر عبر HiveEncryptionService.openEncryptedBox حتى
-    // يُطبَّق تشفير AES-256 حتى في حال استُدعيت init() هذه بشكل مستقل
-    // (كما يحدث في بعض الاختبارات) قبل أن يفتح main.dart الصندوق أصلاً.
-    // إذا كان الصندوق مفتوحاً بالفعل (فُتح من main.dart)، فإن
-    // openEncryptedBox تكتشف ذلك عبر isBoxOpen() ولا تعيد فتحه إطلاقاً —
-    // فلا تعارض في الـ cipher بين نقطتي الفتح.
-    await HiveEncryptionService.openEncryptedBox(pendingBoxName);
-    await HiveEncryptionService.openEncryptedBox(settingsBoxName);
-    await HiveEncryptionService.openEncryptedBox(classroomCacheBox);
+    await Hive.initFlutter();
+    await SecureHiveService.openBox(pendingBoxName);
+    await SecureHiveService.openBox(settingsBoxName);
+    await SecureHiveService.openBox(classroomCacheBox);
     // تهيئة الـ cache عند البدء
     _cachedPendingCount = getPendingSyncs().length;
   }
@@ -37,52 +34,48 @@ class StorageService {
   static Box get _settingsBox => Hive.box(settingsBoxName);
   static Box get _cacheBox => Hive.box(classroomCacheBox);
 
-  static Future<void> addPendingSync(PendingSync sync) async {
-    final list = getPendingSyncs();
-    // Replace existing entry for same student to avoid duplicate stale data
-    list.removeWhere(
-      (s) => s.studentId == sync.studentId && s.subject == sync.subject,
-    );
-    list.add(sync);
+  static String get activeOwnerKey => _activeOwnerKey;
 
-    // تطبيق الحد الأقصى لمنع التراكم اللانهائي
-    final trimmed = list.length > _maxPendingItems
-        ? list.sublist(list.length - _maxPendingItems)
-        : list;
-
-    await _pendingBox.put(
-      'list',
-      jsonEncode(trimmed.map((e) => e.toJson()).toList()),
-    );
-    _cachedPendingCount = trimmed.length; // تحديث الـ cache
+  static void setActiveOwner(String? ownerKey) {
+    final normalized = _normalizeOwnerKey(ownerKey);
+    if (_activeOwnerKey == normalized) return;
+    _activeOwnerKey = normalized;
+    _cachedPendingCount = -1;
   }
 
-  /// يحذف عنصر محدد (طالب+مادة) من قائمة الانتظار بعد نجاح مزامنته.
-  /// إصلاح: يُستخدم بدلاً من `clearPendingSyncs()` عند نجاح حفظ طالب
-  /// واحد فقط، لتفادي حذف عناصر أخرى معلّقة (طلاب/مواد مختلفين) قد
-  /// تكون أُضيفت بالتوازي أثناء انتظار طلب الشبكة لهذا الطالب تحديداً.
-  static Future<void> removePendingSync({
-    required int studentId,
-    required String subject,
+  static String ownerScopedKey(String key, {String? ownerKey}) {
+    final owner = _normalizeOwnerKey(ownerKey ?? _activeOwnerKey);
+    return '${owner.isEmpty ? 'anonymous' : owner}|$key';
+  }
+
+  static Future<void> addPendingSync(
+    PendingSync sync, {
+    int maxItemsForOwner = _maxPendingItems,
   }) async {
-    final list = getPendingSyncs();
-    final before = list.length;
-    list.removeWhere(
-      (s) => s.studentId == studentId && s.subject == subject,
-    );
-    if (list.length == before) return; // لا شيء للحذف
-    if (list.isEmpty) {
-      await _pendingBox.delete('list');
-    } else {
-      await _pendingBox.put(
-        'list',
-        jsonEncode(list.map((e) => e.toJson()).toList()),
-      );
+    if (_activeOwnerKey.isEmpty) {
+      throw StateError('Cannot queue grades without an authenticated owner.');
     }
-    _cachedPendingCount = list.length;
+    final ownerAtCall = _activeOwnerKey;
+    final scopedSync = sync.withOwner(ownerAtCall);
+    await _withPendingMutation(() async {
+      final updated = PendingSyncQueue.upsert(
+        current: _getAllPendingSyncs(),
+        incoming: scopedSync,
+        maxItemsForOwner: maxItemsForOwner.clamp(0, _maxPendingItems).toInt(),
+      );
+      await _writeAllPendingSyncs(updated);
+    });
   }
 
   static List<PendingSync> getPendingSyncs() {
+    final owner = _activeOwnerKey;
+    return _getAllPendingSyncs()
+        .where((s) => s.ownerKey == owner)
+        .toList(growable: false);
+  }
+
+  static List<PendingSync> _getAllPendingSyncs() {
+    if (!Hive.isBoxOpen(pendingBoxName)) return [];
     final raw = _pendingBox.get('list') as String?;
     if (raw == null || raw.isEmpty) return [];
     try {
@@ -97,31 +90,86 @@ class StorageService {
   }
 
   static Future<void> clearPendingSyncs() async {
-    await _pendingBox.delete('list');
-    _cachedPendingCount = 0; // تحديث الـ cache
+    final ownerAtCall = _activeOwnerKey;
+    await _withPendingMutation(() async {
+      final retained = _getAllPendingSyncs()
+          .where((s) => s.ownerKey != ownerAtCall)
+          .toList(growable: false);
+      await _writeAllPendingSyncs(retained);
+    });
   }
 
-  /// يمسح كل البيانات المحلية المؤقتة: المزامنة المعلقة + كاش الفصول +
-  /// الإعدادات المحلية (auto_sync, haptic_feedback, use_server_speech...).
-  /// يُستخدم في "الإعدادات > مسح البيانات المخزنة" حيث يُعلَم المستخدم
-  /// صراحةً أن العملية ستحذف "الإعدادات المحلية" أيضاً وليس فقط المعلقات.
-  /// ملاحظة: لا يمسح صناديق الأدمن (admin_users_box/admin_settings_box/
-  /// admin_activity_box) ولا بيانات المصادقة (JWT tokens في SharedPreferences)
-  /// لتجنّب تسجيل خروج المستخدم أو فقدان صلاحيات الإدارة عن طريق الخطأ.
-  static Future<void> clearAllLocalData() async {
-    await _pendingBox.clear();
-    await _cacheBox.clear();
-    await _settingsBox.clear();
-    _cachedPendingCount = 0;
+  /// Replace the entire pending list (used when partially syncing).
+  static Future<void> replacePendingSyncs(List<PendingSync> list) async {
+    final ownerAtCall = _activeOwnerKey;
+    final scoped = list
+        .map((s) => s.ownerKey == ownerAtCall ? s : s.withOwner(ownerAtCall))
+        .toList(growable: false);
+    await _withPendingMutation(() async {
+      final retained = _getAllPendingSyncs()
+          .where((s) => s.ownerKey != ownerAtCall)
+          .toList(growable: true);
+      await _writeAllPendingSyncs([...retained, ...scoped]);
+    });
+  }
+
+  static Future<void> removePendingForTarget(PendingSync sync) async {
+    final scoped = sync.ownerKey.isEmpty
+        ? sync.withOwner(_activeOwnerKey)
+        : sync;
+    await removeDeliveredPending([scoped]);
+  }
+
+  static Future<void> removeDeliveredPending(
+    Iterable<PendingSync> delivered,
+  ) async {
+    final deliveredSnapshot = delivered.toList(growable: false);
+    if (deliveredSnapshot.isEmpty) return;
+    await _withPendingMutation(() async {
+      final remaining = PendingSyncQueue.removeDelivered(
+        current: _getAllPendingSyncs(),
+        delivered: deliveredSnapshot,
+      );
+      await _writeAllPendingSyncs(remaining);
+    });
   }
 
   /// O(1) — يُرجع من الـ cache مباشرةً دون فك ترميز JSON
   static int get pendingCount {
+    if (!Hive.isBoxOpen(pendingBoxName)) return 0;
     if (_cachedPendingCount < 0) {
       // lazy init إذا لم تُستدعَ init() بعد
       _cachedPendingCount = getPendingSyncs().length;
     }
     return _cachedPendingCount;
+  }
+
+  static Future<void> _writeAllPendingSyncs(List<PendingSync> list) async {
+    if (list.isEmpty) {
+      await _pendingBox.delete('list');
+    } else {
+      await _pendingBox.put(
+        'list',
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+      );
+    }
+    _cachedPendingCount = list
+        .where((sync) => sync.ownerKey == _activeOwnerKey)
+        .length;
+  }
+
+  static Future<T> _withPendingMutation<T>(
+    Future<T> Function() mutation,
+  ) async {
+    final previous = _pendingMutationBarrier;
+    final release = Completer<void>();
+    _pendingMutationBarrier = release.future;
+    await previous;
+    try {
+      return await mutation();
+    } finally {
+      release.complete();
+    }
   }
 
   // ============ Settings ============
@@ -138,19 +186,32 @@ class StorageService {
 
   // ============ Classroom Cache ============
   static Future<void> cacheClassroom(
-      String key, Map<String, dynamic> data) async {
-    await _cacheBox.put(key, jsonEncode(data));
+    String key,
+    Map<String, dynamic> data,
+  ) async {
+    final owner = _activeOwnerKey;
+    final scopedData = Map<String, dynamic>.from(data)..['_owner_key'] = owner;
+    await _cacheBox.put(ownerScopedKey(key), jsonEncode(scopedData));
   }
 
   static Map<String, dynamic>? getCachedClassroom(String key) {
-    final raw = _cacheBox.get(key) as String?;
+    final raw = _cacheBox.get(ownerScopedKey(key)) as String?;
     if (raw == null) return null;
     try {
-      return Map<String, dynamic>.from(jsonDecode(raw));
+      final data = Map<String, dynamic>.from(jsonDecode(raw));
+      if ((data['_owner_key']?.toString() ?? '') != _activeOwnerKey) {
+        return null;
+      }
+      data.remove('_owner_key');
+      return data;
     } catch (e, st) {
       ErrorHandler.logError(e, st, 'StorageService.getCachedClassroom');
       return null;
     }
+  }
+
+  static String _normalizeOwnerKey(String? ownerKey) {
+    return (ownerKey ?? '').trim().toLowerCase();
   }
 
   // ============ SharedPreferences Helpers ============
